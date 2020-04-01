@@ -28,12 +28,19 @@ struct xlib_state {
     Display* dpy;
 };
 
+struct keys {
+    int select;
+    int a, b;
+};
+
 struct state {
     int running;
     int input_fd;
     int uinput_fd;
 
     struct xlib_state x;
+
+    struct keys k;
 };
 
 static void print_usage(int fd, const char* prog)
@@ -241,13 +248,50 @@ static void emit_event(struct state* s,
           e.value);
 }
 
+static void emit_key_event(struct state* s, uint16_t key, int state,
+                           int shift, int meta, int alt, int ctrl)
+{
+    if(state) {
+        if(shift) emit_event(s, EV_KEY, KEY_LEFTSHIFT, 1);
+        if(meta) emit_event(s, EV_KEY, KEY_LEFTMETA, 1);
+        if(alt) emit_event(s, EV_KEY, KEY_LEFTALT, 1);
+        if(ctrl) emit_event(s, EV_KEY, KEY_LEFTCTRL, 1);
+        emit_event(s, EV_KEY, key, 1);
+    } else {
+        emit_event(s, EV_KEY, key, 0);
+        if(ctrl) emit_event(s, EV_KEY, KEY_LEFTCTRL, 0);
+        if(alt) emit_event(s, EV_KEY, KEY_LEFTALT, 0);
+        if(meta) emit_event(s, EV_KEY, KEY_LEFTMETA, 0);
+        if(shift) emit_event(s, EV_KEY, KEY_LEFTSHIFT, 0);
+    }
+    emit_event(s, EV_SYN, SYN_REPORT, 0);
+}
+
 static void emit_key_press(struct state* s, uint16_t key)
 {
-    emit_event(s, EV_KEY, key, 1);
-    emit_event(s, EV_SYN, SYN_REPORT, 0);
+    emit_key_event(s, key, 1, 0, 0, 0, 0);
+    emit_key_event(s, key, 0, 0, 0, 0, 0);
+}
 
-    emit_event(s, EV_KEY, key, 0);
-    emit_event(s, EV_SYN, SYN_REPORT, 0);
+static void emit_key_press_mod(struct state* s, uint16_t key,
+                               int shift, int meta, int alt, int ctrl)
+{
+    emit_key_event(s, key, 1, shift, meta, alt, ctrl);
+    emit_key_event(s, key, 0, shift, meta, alt, ctrl);
+}
+
+static void launch_menu()
+{
+    pid_t p = fork(); CHECK(p, "fork");
+    if(p == 0) {
+        p = fork(); CHECK(p, "fork");
+        if(p == 0) {
+            int r = execlp("k", "k", "-m", "-d", getenv("HOME"), NULL);
+            CHECK(r, "execlp");
+        }
+        exit(0);
+    }
+    pid_t q = waitpid(p, NULL, 0); CHECK(q, "waitpid");
 }
 
 #define DPAD_UP 0x12c
@@ -288,21 +332,102 @@ static void handle_event(struct state* s, struct input_event* e)
 
     Window w = xlib_current_window(&s->x);
 
-    if(xlib_window_has_class(&s->x, w, "feh")) {
-        map_dpad_to_arrow_keys(s, e);
-    } else if(xlib_window_has_class(&s->x, w, "mpv")) {
-        map_dpad_to_arrow_keys(s, e);
+    if(e->code == BTN_BASE3 && (e->value == 1 || e->value == 0)) {
+        s->k.select = e->value;
+        debug("keys SELECT: %d", s->k.select);
+    }
 
+    if(e->code == BTN_THUMB && (e->value == 1 || e->value == 0)) {
+        s->k.a = e->value;
+        debug("keys A: %d", s->k.a);
+    }
+
+    if(e->code == BTN_THUMB2 && (e->value == 1 || e->value == 0)) {
+        s->k.b = e->value;
+        debug("key B: %d", s->k.b);
+    }
+
+    if(s->k.select) {
+        if(e->code == DPAD_UP && e->value == 1) {
+            emit_key_press_mod(s, KEY_TAB, 0, 0, 1, 0);
+            return;
+        }
+
+        if(e->code == DPAD_DOWN && e->value == 1) {
+            emit_key_press_mod(s, KEY_ENTER, 0, 0, 1, 0);
+            return;
+        }
+
+        if(e->code == DPAD_LEFT && e->value == 1) {
+            emit_key_press_mod(s, KEY_H, 0, 0, 1, 0);
+            return;
+        }
+
+        if(e->code == DPAD_RIGHT && e->value == 1) {
+            emit_key_press_mod(s, KEY_L, 0, 0, 1, 0);
+            return;
+        }
+
+        if(e->code == BTN_BASE4 && e->value == 1) {
+            launch_menu();
+            return;
+        }
+
+        if(e->code == BTN_THUMB2 && e->value == 1) {
+            emit_key_press_mod(s, KEY_C, 1, 0, 1, 0);
+            return;
+        }
+    }
+
+    if(xlib_window_has_class(&s->x, w, "feh")) {
         if(e->code == BTN_THUMB && e->value == 1) {
             emit_key_press(s, KEY_SPACE);
         }
 
-        if(e->code == BTN_THUMB2 && e->value == 1) {
-            emit_key_press(s, KEY_Q);
+        if(s->k.b) {
+            if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
+                emit_key_event(s, KEY_UP, e->value, 0, 0, 0, 1);
+            }
+
+            if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
+                emit_key_event(s, KEY_DOWN, e->value, 0, 0, 0, 1);
+            }
+
+            if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
+                emit_key_event(s, KEY_LEFT, e->value, 0, 0, 0, 1);
+            }
+
+            if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
+                emit_key_event(s, KEY_RIGHT, e->value, 0, 0, 0, 1);
+            }
+        } else {
+            map_dpad_to_arrow_keys(s, e);
+        }
+    } else if(xlib_window_has_class(&s->x, w, "mpv")) {
+        if(e->code == BTN_THUMB && e->value == 1) {
+            emit_key_press(s, KEY_SPACE);
+        }
+
+        if(s->k.b) {
+            if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
+                emit_key_event(s, KEY_KPASTERISK, e->value, 0, 0, 0, 0);
+            }
+
+            if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
+                emit_key_event(s, KEY_SLASH, e->value, 0, 0, 0, 0);
+            }
+
+            if(e->code == DPAD_RIGHT && e->value == 1) {
+                emit_key_press(s, KEY_ENTER);
+            }
+
+            if(e->code == DPAD_LEFT && e->value == 1) {
+                emit_key_press(s, KEY_102ND);
+            }
+        } else {
+            map_dpad_to_arrow_keys(s, e);
         }
     } else if(xlib_window_has_class(&s->x, w, "dmenu")) {
-        map_dpad_to_arrow_keys(s, e);
-
         if(e->code == BTN_THUMB && e->value == 1) {
             emit_key_press(s, KEY_ENTER);
         }
@@ -310,26 +435,8 @@ static void handle_event(struct state* s, struct input_event* e)
         if(e->code == BTN_THUMB2 && e->value == 1) {
             emit_key_press(s, KEY_ESC);
         }
-    } else {
+
         map_dpad_to_arrow_keys(s, e);
-
-        if(e->code == BTN_THUMB2 && e->value == 1) {
-            debug("initiating graceful shutdown");
-            s->running = 0;
-        }
-    }
-
-    if(e->code == BTN_BASE4 && e->value == 1) {
-        pid_t p = fork(); CHECK(p, "fork");
-        if(p == 0) {
-            p = fork(); CHECK(p, "fork");
-            if(p == 0) {
-                int r = execlp("k", "k", "-m", "-d", getenv("HOME"), NULL);
-                CHECK(r, "execlp");
-            }
-            exit(0);
-        }
-        pid_t q = waitpid(p, NULL, 0); CHECK(q, "waitpid");
     }
 }
 
@@ -350,11 +457,22 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ESC); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ENTER); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SPACE); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_C); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SLASH); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPASTERISK); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_TAB); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_UP); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOWN); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHT); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTALT); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTSHIFT); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTCTRL); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTMETA); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_102ND); CHECK(r, "ioctl");
 
     struct uinput_setup us = {
         .id.bustype = BUS_USB,
