@@ -1,0 +1,3 @@
+[submodule "libr"]
+	path = libr
+	url = https://github.com/rootmos/libr
