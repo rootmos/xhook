@@ -267,17 +267,16 @@ static void emit_key_event(struct state* s, uint16_t key, int state,
     emit_event(s, EV_SYN, SYN_REPORT, 0);
 }
 
-static void emit_key_press(struct state* s, uint16_t key)
-{
-    emit_key_event(s, key, 1, 0, 0, 0, 0);
-    emit_key_event(s, key, 0, 0, 0, 0, 0);
-}
-
 static void emit_key_press_mod(struct state* s, uint16_t key,
                                int shift, int meta, int alt, int ctrl)
 {
     emit_key_event(s, key, 1, shift, meta, alt, ctrl);
     emit_key_event(s, key, 0, shift, meta, alt, ctrl);
+}
+
+static void emit_key_press(struct state* s, uint16_t key)
+{
+    emit_key_press_mod(s, key, 0, 0, 0, 0);
 }
 
 static void launch_menu()
@@ -350,33 +349,33 @@ static void handle_event(struct state* s, struct input_event* e)
     if(s->k.select) {
         if(e->code == DPAD_UP && e->value == 1) {
             emit_key_press_mod(s, KEY_TAB, 0, 0, 1, 0);
-            return;
         }
 
         if(e->code == DPAD_DOWN && e->value == 1) {
             emit_key_press_mod(s, KEY_ENTER, 0, 0, 1, 0);
-            return;
         }
 
         if(e->code == DPAD_LEFT && e->value == 1) {
             emit_key_press_mod(s, KEY_H, 0, 0, 1, 0);
-            return;
         }
 
         if(e->code == DPAD_RIGHT && e->value == 1) {
             emit_key_press_mod(s, KEY_L, 0, 0, 1, 0);
-            return;
         }
 
         if(e->code == BTN_BASE4 && e->value == 1) {
             launch_menu();
-            return;
+        }
+
+        if(e->code == BTN_THUMB && e->value == 1) {
+            emit_key_press_mod(s, KEY_SPACE, 0, 0, 1, 0);
         }
 
         if(e->code == BTN_THUMB2 && e->value == 1) {
             emit_key_press_mod(s, KEY_C, 1, 0, 1, 0);
-            return;
         }
+
+        return;
     }
 
     if(xlib_window_has_class(&s->x, w, "feh")) {
@@ -427,6 +426,26 @@ static void handle_event(struct state* s, struct input_event* e)
         } else {
             map_dpad_to_arrow_keys(s, e);
         }
+    } else if(xlib_window_has_class(&s->x, w, "chromium")) {
+        if(e->code == BTN_THUMB && e->value == 1) {
+            emit_key_press(s, KEY_SPACE);
+        }
+
+        if(s->k.b) {
+            if(e->code == DPAD_UP && e->value == 1) {
+                emit_key_press(s, KEY_F);
+            }
+
+            if(e->code == DPAD_RIGHT && e->value == 1) {
+                emit_key_press_mod(s, KEY_TAB, 0, 0, 0, 1);
+            }
+
+            if(e->code == DPAD_LEFT && e->value == 1) {
+                emit_key_press_mod(s, KEY_TAB, 1, 0, 0, 1);
+            }
+        } else {
+            map_dpad_to_arrow_keys(s, e);
+        }
     } else if(xlib_window_has_class(&s->x, w, "dmenu")) {
         if(e->code == BTN_THUMB && e->value == 1) {
             emit_key_press(s, KEY_ENTER);
@@ -461,6 +480,8 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_G); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SLASH); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPASTERISK); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_TAB); CHECK(r, "ioctl");
