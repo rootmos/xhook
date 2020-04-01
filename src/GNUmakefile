@@ -1,5 +1,6 @@
 CC = gcc
 CFLAGS ?= -O1 -Wall -Werror
+CFLAGS += -DLOG_LEVEL=LOG_DEBUG
 LDFLAGS = -lr
 
 CFLAGS += -I$(BUILD)/usr/include
