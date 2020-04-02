@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -247,35 +248,53 @@ static void emit_event(struct state* s,
           e.value);
 }
 
-static void emit_key_event(struct state* s, uint16_t key, int state,
-                           int shift, int meta, int alt, int ctrl)
+static void tiny_sleep()
 {
-    if(state) {
-        if(shift) emit_event(s, EV_KEY, KEY_LEFTSHIFT, 1);
-        if(meta) emit_event(s, EV_KEY, KEY_LEFTMETA, 1);
-        if(alt) emit_event(s, EV_KEY, KEY_LEFTALT, 1);
-        if(ctrl) emit_event(s, EV_KEY, KEY_LEFTCTRL, 1);
-        emit_event(s, EV_KEY, key, 1);
-    } else {
-        emit_event(s, EV_KEY, key, 0);
-        if(ctrl) emit_event(s, EV_KEY, KEY_LEFTCTRL, 0);
-        if(alt) emit_event(s, EV_KEY, KEY_LEFTALT, 0);
-        if(meta) emit_event(s, EV_KEY, KEY_LEFTMETA, 0);
-        if(shift) emit_event(s, EV_KEY, KEY_LEFTSHIFT, 0);
-    }
-    emit_event(s, EV_SYN, SYN_REPORT, 0);
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
+    nanosleep(&ts, NULL);
 }
 
-static void emit_key_press_mod(struct state* s, uint16_t key,
-                               int shift, int meta, int alt, int ctrl)
+struct mod {
+    int shift, meta, alt, ctrl, super;
+};
+
+static void emit_key_event(struct state* s, uint16_t key, int state,
+                           struct mod m)
 {
-    emit_key_event(s, key, 1, shift, meta, alt, ctrl);
-    emit_key_event(s, key, 0, shift, meta, alt, ctrl);
+    if(state) {
+        if(m.shift) emit_event(s, EV_KEY, KEY_LEFTSHIFT, 1);
+        if(m.meta) {
+            emit_event(s, EV_KEY, KEY_LEFTMETA, 1);
+            tiny_sleep();
+        }
+        if(m.alt) emit_event(s, EV_KEY, KEY_LEFTALT, 1);
+        if(m.super) emit_event(s, EV_KEY, KEY_RIGHTMETA, 1);
+        if(m.ctrl) emit_event(s, EV_KEY, KEY_LEFTCTRL, 1);
+        emit_event(s, EV_SYN, SYN_REPORT, 0);
+        emit_event(s, EV_KEY, key, 1);
+        emit_event(s, EV_SYN, SYN_REPORT, 0);
+    } else {
+        emit_event(s, EV_KEY, key, 0);
+        emit_event(s, EV_SYN, SYN_REPORT, 0);
+
+        if(m.ctrl) emit_event(s, EV_KEY, KEY_LEFTCTRL, 0);
+        if(m.super) emit_event(s, EV_KEY, KEY_RIGHTMETA, 0);
+        if(m.alt) emit_event(s, EV_KEY, KEY_LEFTALT, 0);
+        if(m.meta) emit_event(s, EV_KEY, KEY_LEFTMETA, 0);
+        if(m.shift) emit_event(s, EV_KEY, KEY_LEFTSHIFT, 0);
+        emit_event(s, EV_SYN, SYN_REPORT, 0);
+    }
+}
+
+static void emit_key_press_mod(struct state* s, uint16_t key, struct mod m)
+{
+    emit_key_event(s, key, 1, m);
+    emit_key_event(s, key, 0, m);
 }
 
 static void emit_key_press(struct state* s, uint16_t key)
 {
-    emit_key_press_mod(s, key, 0, 0, 0, 0);
+    emit_key_press_mod(s, key, (struct mod){ 0 });
 }
 
 static void launch_k()
@@ -300,7 +319,8 @@ struct menu_item {
 };
 
 static struct menu_item* run_menu(struct state* s,
-                                  struct menu_item* ms, size_t n)
+                                  struct menu_item* ms, size_t n,
+                                  int vertical)
 {
     int i[2], o[2];
     int r = pipe(i); CHECK(r, "pipe");
@@ -312,7 +332,11 @@ static struct menu_item* run_menu(struct state* s,
         r = close(o[0]); CHECK(r, "close");
         r = dup2(i[0], 0); CHECK(r, "dup2");
         r = dup2(o[1], 1); CHECK(r, "dup2");
-        r = execlp("dmenu", "dmenu", NULL);
+        if(vertical) {
+            r = execlp("dmenu", "dmenu", "-l", "20", NULL);
+        } else {
+            r = execlp("dmenu", "dmenu", NULL);
+        }
         CHECK(r, "execlp");
     }
     r = close(i[0]); CHECK(r, "close");
@@ -363,14 +387,62 @@ done:
     return choice;
 }
 
-static void goto_workspace(const char* ws)
+static void goto_workspace(struct state* s, const char* ws)
 {
-    debug("goto ws: %s", ws);
+    if(strncmp(ws, LIT("1")) == 0) {
+        emit_key_press_mod(s, KEY_1, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("2")) == 0) {
+        emit_key_press_mod(s, KEY_2, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("3")) == 0) {
+        emit_key_press_mod(s, KEY_KPLEFTPAREN, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("4")) == 0) {
+        emit_key_press_mod(s, KEY_4, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("5")) == 0) {
+        emit_key_press_mod(s, KEY_LEFTBRACE, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("6")) == 0) {
+        emit_key_press_mod(s, KEY_EQUAL, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("w")) == 0) {
+        emit_key_press_mod(s, KEY_W, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("v")) == 0) {
+        emit_key_press_mod(s, KEY_V, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("m")) == 0) {
+        emit_key_press_mod(s, KEY_M, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("c")) == 0) {
+        emit_key_press_mod(s, KEY_C, (struct mod) { .meta = 1 });
+    } else if(strncmp(ws, LIT("g")) == 0) {
+        emit_key_press_mod(s, KEY_G, (struct mod) { .meta = 1 });
+    } else {
+        warning("goto unmapped workspace: %s", ws);
+    }
 }
 
-static void send_to_workspace(const char* ws)
+static void send_to_workspace(struct state* s, const char* ws)
 {
-    debug("send to ws: %s", ws);
+    if(strncmp(ws, LIT("1")) == 0) {
+        emit_key_press_mod(s, KEY_1, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("2")) == 0) {
+        emit_key_press_mod(s, KEY_2, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("3")) == 0) {
+        emit_key_press_mod(s, KEY_KPLEFTPAREN, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("4")) == 0) {
+        emit_key_press_mod(s, KEY_4, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("5")) == 0) {
+        emit_key_press_mod(s, KEY_LEFTBRACE, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("6")) == 0) {
+        emit_key_press_mod(s, KEY_EQUAL, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("w")) == 0) {
+        emit_key_press_mod(s, KEY_W, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("v")) == 0) {
+        emit_key_press_mod(s, KEY_V, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("m")) == 0) {
+        emit_key_press_mod(s, KEY_M, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("c")) == 0) {
+        emit_key_press_mod(s, KEY_C, (struct mod) { .shift = 1, .meta = 1 });
+    } else if(strncmp(ws, LIT("g")) == 0) {
+        emit_key_press_mod(s, KEY_G, (struct mod) { .shift = 1, .meta = 1 });
+    } else {
+        warning("goto unmapped workspace: %s", ws);
+    }
 }
 
 static void select_workspace(struct state* s, struct menu_item* m)
@@ -378,14 +450,25 @@ static void select_workspace(struct state* s, struct menu_item* m)
     struct menu_item ms[] = {
         { .name = "1" },
         { .name = "2" },
-        { .name = "v" },
+        { .name = "3" },
+        { .name = "4" },
+        { .name = "5" },
+        { .name = "6" },
         { .name = "w" },
+        { .name = "v" },
+        { .name = "m" },
+        { .name = "c" },
         { .name = "g" },
     };
 
-    struct menu_item* choice = run_menu(s, ms, LENGTH(ms));
+    struct menu_item* choice = run_menu(s, ms, LENGTH(ms), 0);
 
-    ((void (*)(const char*))m->opaque)(choice->name);
+    ((void (*)(struct state*, const char*))m->opaque)(s, choice->name);
+}
+
+static void toggle_status_bar(struct state* s, struct menu_item* m)
+{
+    emit_key_press_mod(s, KEY_B, (struct mod) { .meta = 1 });
 }
 
 static void launch_menu(struct state* s)
@@ -408,10 +491,13 @@ static void launch_menu(struct state* s)
             .name = "send to workspace",
             .callback = select_workspace,
             .opaque = send_to_workspace
-        },
+        },{
+            .name = "toggle status bar",
+            .callback = toggle_status_bar,
+        }
     };
 
-    run_menu(s, ms, LENGTH(ms));
+    run_menu(s, ms, LENGTH(ms), 1);
     exit(0);
 }
 
@@ -470,19 +556,19 @@ static void handle_event(struct state* s, struct input_event* e)
 
     if(s->k.select) {
         if(e->code == DPAD_UP && e->value == 1) {
-            emit_key_press_mod(s, KEY_TAB, 0, 0, 1, 0);
+            emit_key_press_mod(s, KEY_TAB, (struct mod) { .alt = 1 });
         }
 
         if(e->code == DPAD_DOWN && e->value == 1) {
-            emit_key_press_mod(s, KEY_ENTER, 0, 0, 1, 0);
+            emit_key_press_mod(s, KEY_ENTER, (struct mod) { .alt = 1 });
         }
 
         if(e->code == DPAD_LEFT && e->value == 1) {
-            emit_key_press_mod(s, KEY_H, 0, 0, 1, 0);
+            emit_key_press_mod(s, KEY_H, (struct mod) { .alt = 1 });
         }
 
         if(e->code == DPAD_RIGHT && e->value == 1) {
-            emit_key_press_mod(s, KEY_L, 0, 0, 1, 0);
+            emit_key_press_mod(s, KEY_L, (struct mod) { .alt = 1 });
         }
 
         if(e->code == BTN_BASE4 && e->value == 1) {
@@ -490,11 +576,12 @@ static void handle_event(struct state* s, struct input_event* e)
         }
 
         if(e->code == BTN_THUMB && e->value == 1) {
-            emit_key_press_mod(s, KEY_SPACE, 0, 0, 1, 0);
+            emit_key_press_mod(s, KEY_SPACE, (struct mod) { .alt = 1 });
         }
 
         if(e->code == BTN_THUMB2 && e->value == 1) {
-            emit_key_press_mod(s, KEY_C, 1, 0, 1, 0);
+            emit_key_press_mod(s, KEY_C,
+                               (struct mod) { .shift = 1, .alt = 1 });
         }
 
         return;
@@ -507,19 +594,23 @@ static void handle_event(struct state* s, struct input_event* e)
     if(xlib_window_has_class(&s->x, w, "feh")) {
         if(s->k.b) {
             if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_UP, e->value, 0, 0, 0, 1);
+                emit_key_event(s, KEY_UP, e->value,
+                               (struct mod) { .ctrl = 1});
             }
 
             if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_DOWN, e->value, 0, 0, 0, 1);
+                emit_key_event(s, KEY_DOWN, e->value,
+                               (struct mod) { .ctrl = 1});
             }
 
             if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_LEFT, e->value, 0, 0, 0, 1);
+                emit_key_event(s, KEY_LEFT, e->value,
+                               (struct mod) { .ctrl = 1});
             }
 
             if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_RIGHT, e->value, 0, 0, 0, 1);
+                emit_key_event(s, KEY_RIGHT, e->value,
+                               (struct mod) { .ctrl = 1});
             }
 
             if(e->code == BTN_THUMB && e->value == 1) {
@@ -539,11 +630,11 @@ static void handle_event(struct state* s, struct input_event* e)
             }
 
             if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_KPASTERISK, e->value, 0, 0, 0, 0);
+                emit_key_event(s, KEY_KPASTERISK, e->value, (struct mod) { 0 });
             }
 
             if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_SLASH, e->value, 0, 0, 0, 0);
+                emit_key_event(s, KEY_SLASH, e->value, (struct mod) { 0 });
             }
 
             if(e->code == DPAD_RIGHT && e->value == 1) {
@@ -571,11 +662,12 @@ static void handle_event(struct state* s, struct input_event* e)
             }
 
             if(e->code == DPAD_RIGHT && e->value == 1) {
-                emit_key_press_mod(s, KEY_TAB, 0, 0, 0, 1);
+                emit_key_press_mod(s, KEY_TAB, (struct mod) { .ctrl = 1 });
             }
 
             if(e->code == DPAD_LEFT && e->value == 1) {
-                emit_key_press_mod(s, KEY_TAB, 1, 0, 0, 1);
+                emit_key_press_mod(s, KEY_TAB,
+                                   (struct mod) { .shift = 1, .ctrl = 1 });
             }
         } else {
             map_dpad_to_arrow_keys(s, e);
@@ -606,10 +698,20 @@ static void state_init(struct state* s, const struct options* o)
     s->uinput_fd = open(uinput_path, O_WRONLY);
     CHECK(s->uinput_fd, "open(%s)", uinput_path);
 
-    int r = ioctl(s->uinput_fd, UI_SET_EVBIT, EV_KEY); CHECK(r, "ioctl");
+    int r;
+    r = ioctl(s->uinput_fd, UI_SET_EVBIT, EV_KEY); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_EVBIT, EV_SYN); CHECK(r, "ioctl");
+
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ESC); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ENTER); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SPACE); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_1); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_2); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPLEFTPAREN); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOLLAR); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTBRACE); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_EQUAL); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_B); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_C); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
@@ -619,6 +721,8 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Z); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_V); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_W); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SLASH); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPASTERISK); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_TAB); CHECK(r, "ioctl");
@@ -627,9 +731,11 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTALT); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHTALT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTSHIFT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTCTRL); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTMETA); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHTMETA); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_102ND); CHECK(r, "ioctl");
 
     struct uinput_setup us = {
