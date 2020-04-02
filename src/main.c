@@ -379,10 +379,6 @@ static void handle_event(struct state* s, struct input_event* e)
     }
 
     if(xlib_window_has_class(&s->x, w, "feh")) {
-        if(e->code == BTN_THUMB && e->value == 1) {
-            emit_key_press(s, KEY_SPACE);
-        }
-
         if(s->k.b) {
             if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
                 emit_key_event(s, KEY_UP, e->value, 0, 0, 0, 1);
@@ -399,15 +395,23 @@ static void handle_event(struct state* s, struct input_event* e)
             if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
                 emit_key_event(s, KEY_RIGHT, e->value, 0, 0, 0, 1);
             }
+
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_Z);
+            }
         } else {
             map_dpad_to_arrow_keys(s, e);
+
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_H);
+            }
         }
     } else if(xlib_window_has_class(&s->x, w, "mpv")) {
-        if(e->code == BTN_THUMB && e->value == 1) {
-            emit_key_press(s, KEY_SPACE);
-        }
-
         if(s->k.b) {
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_M);
+            }
+
             if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
                 emit_key_event(s, KEY_KPASTERISK, e->value, 0, 0, 0, 0);
             }
@@ -424,6 +428,10 @@ static void handle_event(struct state* s, struct input_event* e)
                 emit_key_press(s, KEY_102ND);
             }
         } else {
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_SPACE);
+            }
+
             map_dpad_to_arrow_keys(s, e);
         }
     } else if(xlib_window_has_class(&s->x, w, "chromium")) {
@@ -482,6 +490,9 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_G); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Z); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SLASH); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPASTERISK); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_TAB); CHECK(r, "ioctl");
