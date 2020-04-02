@@ -144,8 +144,8 @@ static int xlib_window_has_class(struct xlib_state* st,
     }
 
     if(t == None) {
-        warning("XGetWindowProperty(%s) returned None",
-                XGetAtomName(st->dpy, a));
+        trace("XGetWindowProperty(%s) returned None",
+              XGetAtomName(st->dpy, a));
         return 0;
     }
 
@@ -183,7 +183,6 @@ static void xlib_deinit(struct xlib_state* st)
 {
     XCloseDisplay(st->dpy);
 }
-
 
 static const char* input_event_type_to_string(uint16_t type)
 {
@@ -279,18 +278,141 @@ static void emit_key_press(struct state* s, uint16_t key)
     emit_key_press_mod(s, key, 0, 0, 0, 0);
 }
 
-static void launch_menu()
+static void launch_k()
 {
     pid_t p = fork(); CHECK(p, "fork");
-    if(p == 0) {
-        p = fork(); CHECK(p, "fork");
-        if(p == 0) {
-            int r = execlp("k", "k", "-m", "-d", getenv("HOME"), NULL);
-            CHECK(r, "execlp");
-        }
-        exit(0);
+    if(p != 0) {
+        pid_t q = waitpid(p, NULL, 0); CHECK(q, "waitpid");
+        return;
     }
-    pid_t q = waitpid(p, NULL, 0); CHECK(q, "waitpid");
+
+    p = fork(); CHECK(p, "fork");
+    if(p != 0) exit(0);
+
+    int r = execlp("k", "k", "-m", "-d", getenv("HOME"), NULL);
+    CHECK(r, "execlp");
+}
+
+struct menu_item {
+    const char* name;
+    void (*callback)(struct state*, struct menu_item*);
+    void* opaque;
+};
+
+static struct menu_item* run_menu(struct state* s,
+                                  struct menu_item* ms, size_t n)
+{
+    int i[2], o[2];
+    int r = pipe(i); CHECK(r, "pipe");
+    r = pipe(o); CHECK(r, "pipe");
+
+    pid_t p = fork(); CHECK(p, "fork");
+    if(p == 0) {
+        r = close(i[1]); CHECK(r, "close");
+        r = close(o[0]); CHECK(r, "close");
+        r = dup2(i[0], 0); CHECK(r, "dup2");
+        r = dup2(o[1], 1); CHECK(r, "dup2");
+        r = execlp("dmenu", "dmenu", NULL);
+        CHECK(r, "execlp");
+    }
+    r = close(i[0]); CHECK(r, "close");
+    r = close(o[1]); CHECK(r, "close");
+
+    for(size_t k = 0; k < n; k++) {
+        ssize_t s = write(i[1], ms[k].name, strlen(ms[k].name));
+        CHECK(s, "write");
+        if(s != strlen(ms[k].name)) {
+            failwith("TODO partial write: %zd", s);
+        }
+        s = write(i[1], "\n", 1); CHECK(s, "write");
+        if(s != 1) {
+            failwith("TODO partial write: %zd", s);
+        }
+    }
+
+    r = close(i[1]); CHECK(r, "close");
+
+    char buf[1024];
+    ssize_t j = 0;
+    struct menu_item* choice = NULL;
+    while(j < LENGTH(buf)) {
+        ssize_t s = read(o[0], buf + j, LENGTH(buf) - j); CHECK(s, "read");
+        if(s == 0) {
+            goto done;
+        }
+        for(size_t k = 0; k < s; k++) {
+            if(buf[j + k] == '\n') {
+                buf[j + k] = 0;
+                goto newline;
+            }
+        }
+        j += s;
+    }
+
+newline:
+    for(size_t k = 0; k < n; k++) {
+        if(strncmp(ms[k].name, LIT(buf)) == 0) {
+            choice = &ms[k];
+            if(ms[k].callback) ms[k].callback(s, choice);
+            goto done;
+        }
+    }
+
+done:
+    p = waitpid(p, NULL, 0); CHECK(p, "waitpid");
+    return choice;
+}
+
+static void goto_workspace(const char* ws)
+{
+    debug("goto ws: %s", ws);
+}
+
+static void send_to_workspace(const char* ws)
+{
+    debug("send to ws: %s", ws);
+}
+
+static void select_workspace(struct state* s, struct menu_item* m)
+{
+    struct menu_item ms[] = {
+        { .name = "1" },
+        { .name = "2" },
+        { .name = "v" },
+        { .name = "w" },
+        { .name = "g" },
+    };
+
+    struct menu_item* choice = run_menu(s, ms, LENGTH(ms));
+
+    ((void (*)(const char*))m->opaque)(choice->name);
+}
+
+static void launch_menu(struct state* s)
+{
+    pid_t p = fork(); CHECK(p, "fork");
+    if(p != 0) {
+        p = waitpid(p, NULL, 0); CHECK(p, "waitpid");
+        return;
+    }
+
+    p = fork(); CHECK(p, "fork");
+    if(p != 0) exit(0);
+
+    struct menu_item ms[] = {
+        {
+            .name = "goto workspace",
+            .callback = select_workspace,
+            .opaque = goto_workspace
+        },{
+            .name = "send to workspace",
+            .callback = select_workspace,
+            .opaque = send_to_workspace
+        },
+    };
+
+    run_menu(s, ms, LENGTH(ms));
+    exit(0);
 }
 
 #define DPAD_UP 0x12c
@@ -364,7 +486,7 @@ static void handle_event(struct state* s, struct input_event* e)
         }
 
         if(e->code == BTN_BASE4 && e->value == 1) {
-            launch_menu();
+            launch_menu(s);
         }
 
         if(e->code == BTN_THUMB && e->value == 1) {
@@ -376,6 +498,10 @@ static void handle_event(struct state* s, struct input_event* e)
         }
 
         return;
+    }
+
+    if(e->code == BTN_BASE4 && e->value == 1) {
+        launch_k();
     }
 
     if(xlib_window_has_class(&s->x, w, "feh")) {
