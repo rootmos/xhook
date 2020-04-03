@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,9 @@ struct xlib_state {
 };
 
 struct keys {
+    int up, down, right, left;
     int select;
+    int start;
     int a, b;
 };
 
@@ -42,6 +45,8 @@ struct state {
     struct xlib_state x;
 
     struct keys k;
+    int mouse_mode;
+    int mouse_movement_distance;
 };
 
 static void print_usage(int fd, const char* prog)
@@ -190,6 +195,8 @@ static const char* input_event_type_to_string(uint16_t type)
     switch(type) {
     case EV_SYN: return "EV_SYN";
     case EV_KEY: return "EV_KEY";
+    case EV_REL: return "EV_REL";
+    case EV_ABS: return "EV_ABS";
     case EV_MSC: return "EV_MSC";
     }
 
@@ -256,6 +263,11 @@ static void tiny_sleep()
 
 struct mod {
     int shift, meta, alt, ctrl, super;
+};
+
+struct key {
+    uint16_t k;
+    struct mod m;
 };
 
 static void emit_key_event(struct state* s, uint16_t key, int state,
@@ -466,9 +478,23 @@ static void select_workspace(struct state* s, struct menu_item* m)
     ((void (*)(struct state*, const char*))m->opaque)(s, choice->name);
 }
 
-static void toggle_status_bar(struct state* s, struct menu_item* m)
+static void emit_key_press_callback(struct state* s, struct menu_item* m)
 {
-    emit_key_press_mod(s, KEY_B, (struct mod) { .meta = 1 });
+    struct key* k = (struct key*)m->opaque;
+    emit_key_press_mod(s, k->k, k->m);
+}
+
+static void launch_mpv_menu(struct state* s, struct menu_item* m)
+{
+    struct menu_item ms[] = {
+        {
+            .name = "toggle subtitles",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_V },
+        }
+    };
+
+    run_menu(s, ms, LENGTH(ms), 1);
 }
 
 static void launch_menu(struct state* s)
@@ -493,7 +519,11 @@ static void launch_menu(struct state* s)
             .opaque = send_to_workspace
         },{
             .name = "toggle status bar",
-            .callback = toggle_status_bar,
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_B, .m = { .meta = 1 } },
+        },{
+            .name = "mpv",
+            .callback = launch_mpv_menu,
         }
     };
 
@@ -508,6 +538,8 @@ static void launch_menu(struct state* s)
 
 static void map_dpad_to_arrow_keys(struct state* s, struct input_event* e)
 {
+    s->mouse_mode = 0;
+
     if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
         emit_event(s, EV_KEY, KEY_UP, e->value);
         emit_event(s, EV_SYN, SYN_REPORT, 0);
@@ -529,19 +561,63 @@ static void map_dpad_to_arrow_keys(struct state* s, struct input_event* e)
     }
 }
 
-static void handle_event(struct state* s, struct input_event* e)
+static void apply_mouse_acceleration(struct state* s)
 {
-    if(e->type != EV_KEY) {
-        trace("ignoring event of type: %s",
-              input_event_type_to_string(e->type));
-        return;
+    if(s->k.up || s->k.down || s->k.left || s->k.right) {
+        s->mouse_movement_distance += 1;
+    } else {
+        s->mouse_movement_distance = 10;
+    }
+}
+
+static void emit_mouse_movements(struct state* s)
+{
+    const int d = s->mouse_movement_distance / 10;
+    int32_t x = (s->k.left ? -d : 0) + (s->k.right ? d : 0);
+    if(x != 0) emit_event(s, EV_REL, REL_X, x);
+
+    int32_t y = (s->k.up ? -d : 0) + (s->k.down ? d : 0);
+    if(y != 0) emit_event(s, EV_REL, REL_Y, y);
+
+    if(x != 0 || y != 0) emit_event(s, EV_SYN, SYN_REPORT, 0);
+}
+
+static void map_dpad_to_mouse(struct state* s)
+{
+    s->mouse_mode = 1;
+    emit_mouse_movements(s);
+}
+
+static void update_key_state(struct state* s, struct input_event* e)
+{
+    if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
+        s->k.left = e->value;
+        debug("keys LEFT: %d", s->k.left);
     }
 
-    Window w = xlib_current_window(&s->x);
+    if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
+        s->k.right = e->value;
+        debug("keys RIGHT: %d", s->k.right);
+    }
+
+    if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
+        s->k.up = e->value;
+        debug("keys UP: %d", s->k.up);
+    }
+
+    if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
+        s->k.down = e->value;
+        debug("keys DOWN: %d", s->k.down);
+    }
 
     if(e->code == BTN_BASE3 && (e->value == 1 || e->value == 0)) {
         s->k.select = e->value;
         debug("keys SELECT: %d", s->k.select);
+    }
+
+    if(e->code == BTN_BASE4 && (e->value == 1 || e->value == 0)) {
+        s->k.start = e->value;
+        debug("keys START: %d", s->k.start);
     }
 
     if(e->code == BTN_THUMB && (e->value == 1 || e->value == 0)) {
@@ -553,6 +629,27 @@ static void handle_event(struct state* s, struct input_event* e)
         s->k.b = e->value;
         debug("key B: %d", s->k.b);
     }
+}
+
+static void handle_timeout(struct state* s)
+{
+    if(s->mouse_mode) {
+        apply_mouse_acceleration(s);
+        emit_mouse_movements(s);
+    }
+}
+
+static void handle_event(struct state* s, struct input_event* e)
+{
+    if(e->type != EV_KEY) {
+        trace("ignoring event of type: %s",
+              input_event_type_to_string(e->type));
+        return;
+    }
+
+    update_key_state(s, e);
+
+    Window w = xlib_current_window(&s->x);
 
     if(s->k.select) {
         if(e->code == DPAD_UP && e->value == 1) {
@@ -652,10 +749,6 @@ static void handle_event(struct state* s, struct input_event* e)
             map_dpad_to_arrow_keys(s, e);
         }
     } else if(xlib_window_has_class(&s->x, w, "chromium")) {
-        if(e->code == BTN_THUMB && e->value == 1) {
-            emit_key_press(s, KEY_SPACE);
-        }
-
         if(s->k.b) {
             if(e->code == DPAD_UP && e->value == 1) {
                 emit_key_press(s, KEY_F);
@@ -669,8 +762,18 @@ static void handle_event(struct state* s, struct input_event* e)
                 emit_key_press_mod(s, KEY_TAB,
                                    (struct mod) { .shift = 1, .ctrl = 1 });
             }
-        } else {
+
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_SPACE);
+            }
+
             map_dpad_to_arrow_keys(s, e);
+        } else {
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, BTN_LEFT);
+            }
+
+            map_dpad_to_mouse(s);
         }
     } else if(xlib_window_has_class(&s->x, w, "dmenu")) {
         if(e->code == BTN_THUMB && e->value == 1) {
@@ -682,6 +785,34 @@ static void handle_event(struct state* s, struct input_event* e)
         }
 
         map_dpad_to_arrow_keys(s, e);
+    } else if(xlib_window_has_class(&s->x, w, "spotify")) {
+        if(s->k.b) {
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_SPACE);
+            }
+
+            if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_UP, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_DOWN, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            if(e->code == DPAD_RIGHT && e->value == 1) {
+                emit_key_press(s, KEY_ENTER);
+            }
+
+            s->mouse_mode = 0;
+        } else {
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, BTN_LEFT);
+            }
+
+            map_dpad_to_mouse(s);
+        }
     }
 }
 
@@ -701,6 +832,11 @@ static void state_init(struct state* s, const struct options* o)
     int r;
     r = ioctl(s->uinput_fd, UI_SET_EVBIT, EV_KEY); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_EVBIT, EV_SYN); CHECK(r, "ioctl");
+
+    r = ioctl(s->uinput_fd, UI_SET_EVBIT, EV_REL); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_RELBIT, REL_X); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_RELBIT, REL_Y); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, BTN_LEFT); CHECK(r, "ioctl");
 
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ESC); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ENTER); CHECK(r, "ioctl");
@@ -773,8 +909,20 @@ int main(int argc, char* argv[])
 
     struct input_event e;
     while(s.running) {
-        read_event(&s, &e);
-        handle_event(&s, &e);
+        struct pollfd fds[] = {
+            { .fd = s.input_fd, .events = POLLIN },
+        };
+
+        int timeout = s.mouse_mode ? 10 : 1000;
+        int r = poll(fds, LENGTH(fds), timeout); CHECK(r, "poll");
+        if(r == 0) {
+            handle_timeout(&s);
+        } else {
+            if(fds[0].revents & POLLIN) {
+                read_event(&s, &e);
+                handle_event(&s, &e);
+            }
+        }
     }
 
     state_deinit(&s);
