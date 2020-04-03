@@ -460,17 +460,17 @@ static void send_to_workspace(struct state* s, const char* ws)
 static void select_workspace(struct state* s, struct menu_item* m)
 {
     struct menu_item ms[] = {
+        { .name = "w" },
+        { .name = "v" },
+        { .name = "m" },
+        { .name = "c" },
+        { .name = "g" },
         { .name = "1" },
         { .name = "2" },
         { .name = "3" },
         { .name = "4" },
         { .name = "5" },
         { .name = "6" },
-        { .name = "w" },
-        { .name = "v" },
-        { .name = "m" },
-        { .name = "c" },
-        { .name = "g" },
     };
 
     struct menu_item* choice = run_menu(s, ms, LENGTH(ms), 0);
@@ -770,20 +770,25 @@ static void handle_event(struct state* s, struct input_event* e)
                 emit_key_press(s, KEY_F);
             }
 
-            if(e->code == DPAD_RIGHT && e->value == 1) {
-                emit_key_press_mod(s, KEY_TAB, (struct mod) { .ctrl = 1 });
+            if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_RIGHT, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
             }
 
-            if(e->code == DPAD_LEFT && e->value == 1) {
-                emit_key_press_mod(s, KEY_TAB,
-                                   (struct mod) { .shift = 1, .ctrl = 1 });
+            if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_LEFT, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            if(e->code == DPAD_DOWN && e->value == 1) {
+                emit_key_press_mod(s, KEY_TAB, (struct mod) { .ctrl = 1 });
             }
 
             if(e->code == BTN_THUMB && e->value == 1) {
                 emit_key_press(s, KEY_SPACE);
             }
 
-            map_dpad_to_arrow_keys(s, e);
+            s->mouse_mode = 0;
         } else {
             if(e->code == BTN_THUMB && e->value == 1) {
                 emit_key_press(s, BTN_LEFT);
