@@ -497,6 +497,19 @@ static void launch_mpv_menu(struct state* s, struct menu_item* m)
     run_menu(s, ms, LENGTH(ms), 1);
 }
 
+static void launch_chromium_menu(struct state* s, struct menu_item* m)
+{
+    struct menu_item ms[] = {
+        {
+            .name = "refresh",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_F5 },
+        }
+    };
+
+    run_menu(s, ms, LENGTH(ms), 1);
+}
+
 static void launch_menu(struct state* s)
 {
     pid_t p = fork(); CHECK(p, "fork");
@@ -524,6 +537,9 @@ static void launch_menu(struct state* s)
         },{
             .name = "mpv",
             .callback = launch_mpv_menu,
+        },{
+            .name = "chromium",
+            .callback = launch_chromium_menu,
         }
     };
 
@@ -843,6 +859,7 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SPACE); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_1); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_2); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F5); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPLEFTPAREN); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOLLAR); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTBRACE); CHECK(r, "ioctl");
