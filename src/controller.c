@@ -191,8 +191,6 @@ static void xlib_init(struct xlib_state* st)
 
     st->dpy = XOpenDisplay(NULL);
     if(st->dpy == NULL) failwith("unable to open display");
-
-    xlib_current_window(st);
 }
 
 static void xlib_deinit(struct xlib_state* st)
@@ -637,6 +635,21 @@ static void map_dpad_to_mouse(struct state* s)
     emit_mouse_movements(s);
 }
 
+static void show_window_outline(void)
+{
+    pid_t p = fork(); CHECK(p, "fork");
+    if(p != 0) {
+        p = waitpid(p, NULL, 0); CHECK(p, "waitpid");
+        return;
+    }
+
+    p = fork(); CHECK(p, "fork");
+    if(p != 0) exit(0);
+
+    int r = execlp(SHELL, "-" SHELL, "-c", "outline-current-window", NULL);
+    CHECK(r, "execlp");
+}
+
 static void update_key_state(struct state* s, struct input_event* e)
 {
     if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
@@ -662,6 +675,8 @@ static void update_key_state(struct state* s, struct input_event* e)
     if(e->code == BTN_BASE3 && (e->value == 1 || e->value == 0)) {
         s->k.select = e->value;
         debug("keys SELECT: %d", s->k.select);
+
+        if(e->value == 1) show_window_outline();
     }
 
     if(e->code == BTN_BASE4 && (e->value == 1 || e->value == 0)) {
@@ -711,10 +726,14 @@ static void handle_event(struct state* s, struct input_event* e)
 
         if(e->code == DPAD_LEFT && e->value == 1) {
             emit_key_press_mod(s, KEY_H, (struct mod) { .alt = 1 });
+
+            show_window_outline();
         }
 
         if(e->code == DPAD_RIGHT && e->value == 1) {
             emit_key_press_mod(s, KEY_L, (struct mod) { .alt = 1 });
+
+            show_window_outline();
         }
 
         if(e->code == BTN_BASE4 && e->value == 1) {

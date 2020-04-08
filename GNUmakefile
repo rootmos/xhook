@@ -1,15 +1,15 @@
 export BUILD ?= $(shell pwd)/build
 
-TARGET = $(BUILD)/main
 export PREFIX ?= $(HOME)/.local
 
 export INPUT_DEVICE ?= /dev/input/event17
 
 run: build
-	$(TARGET) -i $(INPUT_DEVICE)
+	$(BUILD)/controller -i $(INPUT_DEVICE)
 
 install: build
-	install --strip -D $(TARGET) $(PREFIX)/bin/controller
+	install --strip -D -t $(PREFIX)/bin \
+		$(BUILD)/controller $(BUILD)/outline-current-window
 	envsubst < controller.service \
 		| install -D /dev/stdin $(HOME)/.config/systemd/user/controller.service
 	systemctl --user enable controller.service
