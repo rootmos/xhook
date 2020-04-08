@@ -14,6 +14,10 @@
 
 #include <r.h>
 
+#ifndef SHELL
+#define SHELL "/bin/sh"
+#endif
+
 static int handle_x11_error(Display* d, XErrorEvent* e)
 {
     char buf[1024];
@@ -320,7 +324,7 @@ static void launch_k()
     p = fork(); CHECK(p, "fork");
     if(p != 0) exit(0);
 
-    int r = execlp("k", "k", "-m", "-d", getenv("HOME"), NULL);
+    int r = execlp(SHELL, "-" SHELL, "-c", "k -m", NULL);
     CHECK(r, "execlp");
 }
 
@@ -345,9 +349,9 @@ static struct menu_item* run_menu(struct state* s,
         r = dup2(i[0], 0); CHECK(r, "dup2");
         r = dup2(o[1], 1); CHECK(r, "dup2");
         if(vertical) {
-            r = execlp("dmenu", "dmenu", "-l", "20", NULL);
+            r = execlp(SHELL, "-" SHELL, "-c", "dmenu -l 20", NULL);
         } else {
-            r = execlp("dmenu", "dmenu", NULL);
+            r = execlp(SHELL, "-" SHELL, "-c", "dmenu", NULL);
         }
         CHECK(r, "execlp");
     }
