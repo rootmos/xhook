@@ -179,6 +179,12 @@ static int xlib_window_has_class(struct xlib_state* st,
     return 0;
 }
 
+static int xlib_window_title_contains(struct xlib_state* st,
+                                      Window w, const char* str)
+{
+    return strstr(xlib_window_name(st, w), str) != NULL;
+}
+
 static void xlib_init(struct xlib_state* st)
 {
     XSetErrorHandler(handle_x11_error);
@@ -488,6 +494,13 @@ static void emit_key_press_callback(struct state* s, struct menu_item* m)
     emit_key_press_mod(s, k->k, k->m);
 }
 
+static void run_command_callback(struct state* s, struct menu_item* m)
+{
+    const char* cmd = (const char*)m->opaque;
+    debug("running: %s", cmd);
+    system(cmd);
+}
+
 static void launch_mpv_menu(struct state* s, struct menu_item* m)
 {
     struct menu_item ms[] = {
@@ -495,6 +508,10 @@ static void launch_mpv_menu(struct state* s, struct menu_item* m)
             .name = "toggle subtitles",
             .callback = emit_key_press_callback,
             .opaque = &(struct key) { .k = KEY_V },
+        },{
+            .name = "loop current file",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_L, .m = { .shift = 1 } },
         }
     };
 
@@ -508,6 +525,14 @@ static void launch_chromium_menu(struct state* s, struct menu_item* m)
             .name = "refresh",
             .callback = emit_key_press_callback,
             .opaque = &(struct key) { .k = KEY_F5 },
+        },{
+            .name = "spawn",
+            .callback = run_command_callback,
+            .opaque = "chromium",
+        },{
+            .name = "new tab",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_T, .m = { .ctrl = 1 } },
         }
     };
 
@@ -538,6 +563,10 @@ static void launch_menu(struct state* s)
             .name = "toggle status bar",
             .callback = emit_key_press_callback,
             .opaque = &(struct key) { .k = KEY_B, .m = { .meta = 1 } },
+        },{
+            .name = "ESC",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_ESC },
         },{
             .name = "mpv",
             .callback = launch_mpv_menu,
@@ -769,7 +798,15 @@ static void handle_event(struct state* s, struct input_event* e)
             map_dpad_to_arrow_keys(s, e);
         }
     } else if(xlib_window_has_class(&s->x, w, "chromium")) {
-        if(s->k.b) {
+        int mode = 0;
+        if(xlib_window_title_contains(&s->x, w, "YouTube")
+           || xlib_window_title_contains(&s->x, w, "Twitch")) {
+            mode = !s->k.b;
+        } else {
+            mode = s->k.b;
+        }
+
+        if(mode) {
             if(e->code == DPAD_UP && e->value == 1) {
                 emit_key_press(s, KEY_F);
             }
@@ -794,8 +831,9 @@ static void handle_event(struct state* s, struct input_event* e)
 
             s->mouse_mode = 0;
         } else {
-            if(e->code == BTN_THUMB && e->value == 1) {
-                emit_key_press(s, BTN_LEFT);
+            if(e->code == BTN_THUMB && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, BTN_LEFT, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
             }
 
             map_dpad_to_mouse(s);
@@ -863,42 +901,49 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_RELBIT, REL_Y); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, BTN_LEFT); CHECK(r, "ioctl");
 
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ESC); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ENTER); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SPACE); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F5); CHECK(r, "ioctl");
+
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_1); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_2); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F5); CHECK(r, "ioctl");
+
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_B); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_C); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_G); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_T); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_V); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_W); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Z); CHECK(r, "ioctl");
+
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SLASH); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPASTERISK); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPLEFTPAREN); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOLLAR); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTBRACE); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_EQUAL); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_B); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_C); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_G); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Z); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_V); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_W); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SLASH); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_KPASTERISK); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_TAB); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_102ND); CHECK(r, "ioctl");
+
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_UP); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOWN); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHT); CHECK(r, "ioctl");
+
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ESC); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ENTER); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SPACE); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_TAB); CHECK(r, "ioctl");
+
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTALT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHTALT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTSHIFT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTCTRL); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTMETA); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHTMETA); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_102ND); CHECK(r, "ioctl");
 
     struct uinput_setup us = {
         .id.bustype = BUS_USB,
