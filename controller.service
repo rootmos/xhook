@@ -3,7 +3,6 @@ Description=Controller mapping service
 
 [Service]
 Restart=always
-RestartSec=5
 WorkingDirectory=~
 ExecStartPre=/bin/systemctl --user import-environment DISPLAY XAUTHORITY
 ExecStart=$PREFIX/bin/controller -i $INPUT_DEVICE

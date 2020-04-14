@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <linux/input.h>
@@ -227,11 +228,14 @@ static const char* input_event_code_to_string(uint16_t code)
     return buf;
 }
 
-static void read_event(struct state* s, struct input_event* e)
+static int read_event(struct state* s, struct input_event* e)
 {
-    trace("waiting for event");
+    trace("reading event");
 
     ssize_t r = read(s->input_fd, e, sizeof(*e));
+    if(r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        return 0;
+    }
     CHECK(r, "read");
     if(r != sizeof(*e)) { failwith("unexpected partial read"); }
 
@@ -239,6 +243,8 @@ static void read_event(struct state* s, struct input_event* e)
           input_event_type_to_string(e->type),
           input_event_code_to_string(e->code),
           e->value);
+
+    return 1;
 }
 
 static void emit_event(struct state* s,
@@ -904,11 +910,11 @@ static void state_init(struct state* s, const struct options* o)
 
     s->running = 1;
 
-    s->input_fd = open(o->input_device_path, O_RDONLY);
+    s->input_fd = open(o->input_device_path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
     CHECK(s->input_fd, "open(%s)", o->input_device_path);
 
     const char* uinput_path = "/dev/uinput";
-    s->uinput_fd = open(uinput_path, O_WRONLY);
+    s->uinput_fd = open(uinput_path, O_WRONLY | O_CLOEXEC);
     CHECK(s->uinput_fd, "open(%s)", uinput_path);
 
     int r;
@@ -1003,14 +1009,18 @@ int main(int argc, char* argv[])
             { .fd = s.input_fd, .events = POLLIN },
         };
 
-        int timeout = s.mouse_mode ? 10 : 1000;
+        int timeout = s.mouse_mode ? 10 : 10000;
         int r = poll(fds, LENGTH(fds), timeout); CHECK(r, "poll");
         if(r == 0) {
+            debug("poll timeout: mouse_mode=%d timeout=%dms",
+                  s.mouse_mode, timeout);
             handle_timeout(&s);
         } else {
+            trace("poll events: %d", r);
             if(fds[0].revents & POLLIN) {
-                read_event(&s, &e);
-                handle_event(&s, &e);
+                while(read_event(&s, &e)) {
+                    handle_event(&s, &e);
+                }
             }
         }
     }
