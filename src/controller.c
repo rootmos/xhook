@@ -332,7 +332,14 @@ static void launch_k()
     }
 
     p = fork(); CHECK(p, "fork");
-    if(p != 0) exit(0);
+    if(p != 0) {
+        debug("launching k menu: %d", p);
+        exit(0);
+    }
+
+    for(int fd = 0; fd < 3; fd++) {
+        int r = close(fd); CHECK(r, "close(%d)", fd);
+    }
 
     int r = execlp(SHELL, "-" SHELL, "-c", "k -m", NULL);
     CHECK(r, "execlp");
@@ -358,6 +365,7 @@ static struct menu_item* run_menu(struct state* s,
         r = close(o[0]); CHECK(r, "close");
         r = dup2(i[0], 0); CHECK(r, "dup2");
         r = dup2(o[1], 1); CHECK(r, "dup2");
+        r = close(2); CHECK(r, "close(2)");
         if(vertical) {
             r = execlp(SHELL, "-" SHELL, "-c", "dmenu -l 20", NULL);
         } else {
@@ -410,6 +418,7 @@ newline:
 
 done:
     p = waitpid(p, NULL, 0); CHECK(p, "waitpid");
+    r = close(o[0]); CHECK(r, "close");
     return choice;
 }
 
@@ -516,6 +525,10 @@ static void launch_mpv_menu(struct state* s, struct menu_item* m)
             .name = "loop current file",
             .callback = emit_key_press_callback,
             .opaque = &(struct key) { .k = KEY_L, .m = { .shift = 1 } },
+        },{
+            .name = "cycle aspect ration",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_A, .m = { .shift = 1 } },
         }
     };
 
@@ -577,6 +590,10 @@ static void launch_menu(struct state* s)
         },{
             .name = "chromium",
             .callback = launch_chromium_menu,
+        },{
+            .name = "kill controller",
+            .callback = run_command_callback,
+            .opaque = "killall controller",
         }
     };
 
@@ -652,7 +669,8 @@ static void show_window_outline(void)
     p = fork(); CHECK(p, "fork");
     if(p != 0) exit(0);
 
-    int r = execlp(SHELL, "-" SHELL, "-c", "outline-current-window", NULL);
+    int r = execlp(SHELL, "-" SHELL, "-c",
+                   "outline-current-window -t 200 -w 2", NULL);
     CHECK(r, "execlp");
 }
 
@@ -724,6 +742,8 @@ static void handle_event(struct state* s, struct input_event* e)
     if(s->k.select) {
         if(e->code == DPAD_UP && e->value == 1) {
             emit_key_press_mod(s, KEY_TAB, (struct mod) { .alt = 1 });
+
+            show_window_outline();
         }
 
         if(e->code == DPAD_DOWN && e->value == 1) {
@@ -800,12 +820,12 @@ static void handle_event(struct state* s, struct input_event* e)
                 emit_key_press(s, KEY_M);
             }
 
-            if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_KPASTERISK, e->value, (struct mod) { 0 });
+            if(e->code == DPAD_UP && e->value == 1) {
+                emit_key_press(s, KEY_L);
             }
 
-            if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_SLASH, e->value, (struct mod) { 0 });
+            if(e->code == DPAD_DOWN && e->value == 1) {
+                emit_key_press_mod(s, KEY_L, (struct mod) { .shift = 1 });
             }
 
             if(e->code == DPAD_RIGHT && e->value == 1) {
