@@ -834,10 +834,24 @@ static void handle_event(struct state* s, struct input_event* e)
 
             map_dpad_to_arrow_keys(s, e);
         }
+    } else if(xlib_window_has_class(&s->x, w, "streamlink-twitch-gui")) {
+        if(s->k.b) {
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_F5);
+            }
+        } else {
+            if(e->code == BTN_THUMB && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, BTN_LEFT, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            map_dpad_to_mouse(s);
+        }
     } else if(xlib_window_has_class(&s->x, w, "chromium")) {
         int mode = 0;
         if(xlib_window_title_contains(&s->x, w, "YouTube")
-           || xlib_window_title_contains(&s->x, w, "Twitch")) {
+           || xlib_window_title_contains(&s->x, w, "Twitch")
+           || xlib_window_title_contains(&s->x, w, "Netflix")) {
             mode = !s->k.b;
         } else {
             mode = s->k.b;
