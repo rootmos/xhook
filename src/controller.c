@@ -341,28 +341,6 @@ static void emit_key_press(struct state* s, uint16_t key)
     emit_key_press_mod(s, key, (struct mod){ 0 });
 }
 
-static void launch_k()
-{
-    pid_t p = fork(); CHECK(p, "fork");
-    if(p != 0) {
-        pid_t q = waitpid(p, NULL, 0); CHECK(q, "waitpid");
-        return;
-    }
-
-    p = fork(); CHECK(p, "fork");
-    if(p != 0) {
-        debug("launching k menu: %d", p);
-        exit(0);
-    }
-
-    for(int fd = 0; fd < 3; fd++) {
-        int r = close(fd); CHECK(r, "close(%d)", fd);
-    }
-
-    int r = execlp(SHELL, "-" SHELL, "-c", "k -m", NULL);
-    CHECK(r, "execlp");
-}
-
 struct menu_item {
     const char* name;
     void (*callback)(struct state*, struct menu_item*);
@@ -649,15 +627,6 @@ static void map_dpad_to_arrow_keys(struct state* s, struct input_event* e)
     }
 }
 
-static void apply_mouse_acceleration(struct state* s)
-{
-    if(s->k.up || s->k.down || s->k.left || s->k.right) {
-        s->mouse_movement_distance += 1;
-    } else {
-        s->mouse_movement_distance = 10;
-    }
-}
-
 static void emit_mouse_movements(struct state* s)
 {
     const int d = s->mouse_movement_distance / 10;
@@ -740,8 +709,13 @@ static void update_key_state(struct state* s, struct input_event* e)
 static void handle_timeout(struct state* s)
 {
     if(s->mouse_mode) {
-        apply_mouse_acceleration(s);
-        emit_mouse_movements(s);
+        if(!s->k.up && !s->k.down && !s->k.left && !s->k.right) {
+            s->mouse_mode = 0;
+            s->mouse_movement_distance = 10;
+        } else {
+            emit_mouse_movements(s);
+            s->mouse_movement_distance += 1;
+        }
     }
 }
 
@@ -797,7 +771,7 @@ static void handle_event(struct state* s, struct input_event* e)
     }
 
     if(e->code == BTN_BASE4 && e->value == 1) {
-        launch_k();
+        emit_key_press_mod(s, KEY_K, (struct mod) { .alt = 1 });
     }
 
     if(xlib_window_has_class(&s->x, w, "feh")) {
@@ -1039,6 +1013,7 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_G); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_K); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
