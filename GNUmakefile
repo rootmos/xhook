@@ -2,10 +2,10 @@ export BUILD ?= $(shell pwd)/build
 
 export PREFIX ?= $(HOME)/.local
 
-export INPUT_DEVICE ?= /dev/input/event17
+export INPUT_DEVICE_NAME ?= "SZMy-power LTD CO.  Dual Box WII"
 
 run: build
-	$(BUILD)/controller -i $(INPUT_DEVICE)
+	$(BUILD)/controller -n $(INPUT_DEVICE_NAME) -I 0
 
 install: build
 	install --strip -D -t $(PREFIX)/bin \

@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -29,6 +30,8 @@ static int handle_x11_error(Display* d, XErrorEvent* e)
 
 struct options {
     const char* input_device_path;
+    const char* input_device_name;
+    int input_device_name_index;
 };
 
 struct xlib_state {
@@ -60,19 +63,33 @@ static void print_usage(int fd, const char* prog)
     dprintf(fd, "\n");
     dprintf(fd, "options:\n");
     dprintf(fd, "  -i PATH  read input device at PATH\n");
+    dprintf(fd, "  -n NAME  select input device with NAME\n");
+    dprintf(fd, "  -I INDEX select the INDEX:th device with matching name\n");
     dprintf(fd, "  -h       print this message\n");
 }
 
 static void parse_options(struct options* o, int argc, char* argv[])
 {
     memset(o, 0, sizeof(*o));
+    o->input_device_name_index = -1;
 
     int res;
-    while((res = getopt(argc, argv, "i:h")) != -1) {
+    while((res = getopt(argc, argv, "i:n:I:h")) != -1) {
         switch(res) {
         case 'i':
             o->input_device_path = strdup(optarg);
             CHECK_MALLOC(o->input_device_path);
+            break;
+        case 'n':
+            o->input_device_name = strdup(optarg);
+            CHECK_MALLOC(o->input_device_name);
+            break;
+        case 'I':
+            res = sscanf(optarg, "%d", &o->input_device_name_index);
+            if(res != 1) {
+                dprintf(2, "unable to parse index: %s\n", optarg);
+                exit(1);
+            }
             break;
         case 'h':
         default:
@@ -81,7 +98,8 @@ static void parse_options(struct options* o, int argc, char* argv[])
         }
     }
 
-    if(o->input_device_path == NULL) {
+    if(o->input_device_path == NULL &&
+       o->input_device_name == NULL) {
         dprintf(2, "input device not specified\n");
         print_usage(2, argv[0]);
         exit(1);
@@ -924,14 +942,78 @@ static void handle_event(struct state* s, struct input_event* e)
     }
 }
 
+static int find_device_based_on_name(const char* name, int index)
+{
+    int choice = -1;
+
+    int dfd = open("/dev/input", O_RDONLY); CHECK(dfd, "open(/dev/input)");
+    DIR* d = fdopendir(dfd); CHECK_NOT(d, NULL, "opendir(/dev/input)");
+    struct dirent* p;
+    while((p = readdir(d)) != NULL) {
+        if(strncmp(p->d_name, "event", 5) == 0) {
+            int fd = openat(dfd, p->d_name, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+            if(fd == -1 && errno == EACCES) {
+                continue;
+            }
+            CHECK(fd, "open(%s, O_RDONLY)", p->d_name);
+
+            char n[256];
+            int r = ioctl(fd, EVIOCGNAME(sizeof(n)), n);
+            CHECK(r, "ioctl(EVIOCGNAME)");
+
+            if(strcmp(name, n) == 0) {
+                if(index >= 0) {
+                    char l[256];
+                    r = ioctl(fd, EVIOCGPHYS(sizeof(l)), l);
+                    CHECK(r, "ioctl(EVIOCGPHYS)");
+                    char buf[256]; int i = -1;
+                    r = sscanf(l, "%255[^/]/input%d", buf, &i);
+                    CHECK(r, "sscanf");
+
+                    if(index == i) {
+                        debug("chose input device: /dev/input/%s", p->d_name);
+                        choice = fd;
+                    } else {
+                        r = close(fd); CHECK(r, "close");
+                    }
+                } else {
+                    if(choice >= 0) {
+                        failwith("found more than one device with matching "
+                                 "name: desired device index not specified");
+                    }
+                    choice = fd;
+                }
+            } else {
+                r = close(fd); CHECK(r, "close");
+            }
+        }
+    }
+
+    int r = closedir(d); CHECK(r, "closedir");
+
+    return choice;
+}
+
 static void state_init(struct state* s, const struct options* o)
 {
     memset(s, 0, sizeof(*s));
 
     s->running = 1;
 
-    s->input_fd = open(o->input_device_path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
-    CHECK(s->input_fd, "open(%s)", o->input_device_path);
+    if(o->input_device_path != NULL) {
+        info("input device: %s", o->input_device_path);
+        s->input_fd = open(o->input_device_path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+        CHECK(s->input_fd, "open(%s)", o->input_device_path);
+    } else if(o->input_device_name != NULL) {
+        s->input_fd = find_device_based_on_name(
+            o->input_device_name, o->input_device_name_index);
+        if(s->input_fd == -1) {
+            failwith("unable to find device with name: %s",
+                     o->input_device_name);
+        }
+    } else {
+        failwith("input device not specified");
+    }
 
     const char* uinput_path = "/dev/uinput";
     s->uinput_fd = open(uinput_path, O_WRONLY | O_CLOEXEC);
@@ -1017,8 +1099,6 @@ int main(int argc, char* argv[])
 {
     struct options o;
     parse_options(&o, argc, argv);
-
-    info("input device: %s", o.input_device_path);
 
     struct state s;
     state_init(&s, &o);
