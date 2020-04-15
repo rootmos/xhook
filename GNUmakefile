@@ -22,4 +22,7 @@ libr:
 	@mkdir -p "$(BUILD)"
 	$(MAKE) -C libr install PREFIX="$(BUILD)/usr"
 
-.PHONY: run install build libr
+clean:
+	rm -rf $(BUILD)
+
+.PHONY: run install build clean libr

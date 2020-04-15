@@ -1018,7 +1018,7 @@ int main(int argc, char* argv[])
     struct options o;
     parse_options(&o, argc, argv);
 
-    debug("input device: %s", o.input_device_path);
+    info("input device: %s", o.input_device_path);
 
     struct state s;
     state_init(&s, &o);
@@ -1037,9 +1037,33 @@ int main(int argc, char* argv[])
             handle_timeout(&s);
         } else {
             trace("poll events: %d", r);
+
+            if(fds[0].revents & POLLERR) {
+                if(fds[0].revents & POLLHUP) {
+                    warning("input device disconnected");
+                    s.running = 0;
+                    fds[0].revents &= ~POLLHUP;
+                } else {
+                    failwith("unhandled poll error condition: %hd",
+                             fds[0].revents);
+                }
+
+                fds[0].revents &= ~POLLERR;
+            }
+
             if(fds[0].revents & POLLIN) {
                 while(read_event(&s, &e)) {
                     handle_event(&s, &e);
+                }
+
+                fds[0].revents &= ~POLLIN;
+            }
+
+            for(size_t i = 0; i < LENGTH(fds); i++) {
+                if(fds[i].revents != 0) {
+                    failwith("unhandled events: "
+                             "fds[%zu] = { .fd = %d, .revents = %hd }",
+                             i, fds[i].fd, fds[i].revents);
                 }
             }
         }

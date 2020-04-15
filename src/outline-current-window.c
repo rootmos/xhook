@@ -277,7 +277,7 @@ int main(int argc, char* argv[])
                 }
 
                 if(si.ssi_signo == SIGINT) {
-                    info("initiating graceful shutdown");
+                    debug("initiating graceful shutdown");
                     running = 0;
                 }
             }
@@ -304,7 +304,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    info("shutting down");
+    debug("shutting down");
 
     XUnmapWindow(dpy, o);
     XCloseDisplay(dpy);
