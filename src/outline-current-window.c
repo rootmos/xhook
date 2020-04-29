@@ -41,6 +41,21 @@ static Window focused_window(void)
     return w;
 }
 
+static void get_window_pos(Window w, int* x, int* y)
+{
+    XWindowAttributes wa;
+    *x = 0, *y = 0;
+    Window root;
+
+    do {
+        XGetWindowAttributes(dpy, w, &wa);
+        *x += wa.x; *y += wa.y;
+        Window* cs; unsigned int csn;
+        XQueryTree(dpy, w, &root, &w, &cs, &csn);
+        if(cs) XFree(cs);
+    } while(w != root);
+}
+
 static Window create_outline(struct options* opts, Window w)
 {
     XWindowAttributes wa;
@@ -61,10 +76,12 @@ static Window create_outline(struct options* opts, Window w)
         .colormap = XCreateColormap(dpy, parent, vi.visual, AllocNone),
     };
 
+    int x, y; get_window_pos(w, &x, &y);
+
     Window o = XCreateWindow(
         dpy,
         parent,
-        wa.x, wa.y,
+        x, y,
         wa.width-(2*opts->border_width),
         wa.height-(2*opts->border_width),
         opts->border_width,
@@ -99,11 +116,14 @@ static void update_outline(struct options* opts, Window o, Window w)
     XWindowAttributes wa;
     XGetWindowAttributes(dpy, w, &wa);
 
+    int width = wa.width-(2*opts->border_width);
+    int height = wa.height-(2*opts->border_width);
+    int x, y;
+    get_window_pos(w, &x, &y);
+
     debug("updating outline window (%ld): now outlining %ld", o, w);
 
-    XMoveResizeWindow(dpy, o, wa.x, wa.y,
-                      wa.width-(2*opts->border_width),
-                      wa.height-(2*opts->border_width));
+    XMoveResizeWindow(dpy, o, x, y, width, height);
 }
 
 static void listen_to_window(Window w)

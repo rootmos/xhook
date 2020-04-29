@@ -198,14 +198,10 @@ static int xlib_window_has_class(struct xlib_state* st,
     return 0;
 }
 
-static int xlib_window_title_contains(struct xlib_state* st,
-                                      Window w, const char* str)
-{
-    return strstr(xlib_window_name(st, w), str) != NULL;
-}
-
 static void xlib_init(struct xlib_state* st)
 {
+    if(st->dpy != NULL) return;
+
     XSetErrorHandler(handle_x11_error);
 
     st->dpy = XOpenDisplay(NULL);
@@ -355,6 +351,13 @@ static struct menu_item* run_menu(struct state* s,
     int r = pipe(i); CHECK(r, "pipe");
     r = pipe(o); CHECK(r, "pipe");
 
+    xlib_init(&s->x);
+
+    char cmd[1024];
+    snprintf(LIT(cmd), "dmenu -w %lu %s",
+             xlib_current_window(&s->x),
+             vertical ? "-l 20" : "");
+
     pid_t p = fork(); CHECK(p, "fork");
     if(p == 0) {
         r = close(i[1]); CHECK(r, "close");
@@ -362,11 +365,8 @@ static struct menu_item* run_menu(struct state* s,
         r = dup2(i[0], 0); CHECK(r, "dup2");
         r = dup2(o[1], 1); CHECK(r, "dup2");
         r = close(2); CHECK(r, "close(2)");
-        if(vertical) {
-            r = execlp(SHELL, "-" SHELL, "-c", "dmenu -l 20", NULL);
-        } else {
-            r = execlp(SHELL, "-" SHELL, "-c", "dmenu", NULL);
-        }
+
+        r = execlp(SHELL, "-" SHELL, "-c", cmd, NULL);
         CHECK(r, "execlp");
     }
     r = close(i[0]); CHECK(r, "close");
@@ -525,6 +525,14 @@ static void launch_mpv_menu(struct state* s, struct menu_item* m)
             .name = "cycle aspect ration",
             .callback = emit_key_press_callback,
             .opaque = &(struct key) { .k = KEY_A, .m = { .shift = 1 } },
+        },{
+            .name = "show stats",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_I },
+        },{
+            .name = "toggle stats",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_I, .m = { .shift = 1 } },
         }
     };
 
@@ -562,6 +570,7 @@ static void launch_menu(struct state* s)
 
     p = fork(); CHECK(p, "fork");
     if(p != 0) exit(0);
+    s->x.dpy = NULL;
 
     struct menu_item ms[] = {
         {
@@ -848,16 +857,7 @@ static void handle_event(struct state* s, struct input_event* e)
             map_dpad_to_mouse(s);
         }
     } else if(xlib_window_has_class(&s->x, w, "chromium")) {
-        int mode = 0;
-        if(xlib_window_title_contains(&s->x, w, "YouTube")
-           || xlib_window_title_contains(&s->x, w, "Twitch")
-           || xlib_window_title_contains(&s->x, w, "Netflix")) {
-            mode = !s->k.b;
-        } else {
-            mode = s->k.b;
-        }
-
-        if(mode) {
+        if(s->k.b) {
             if(e->code == DPAD_UP && e->value == 1) {
                 emit_key_press(s, KEY_F);
             }
@@ -873,7 +873,7 @@ static void handle_event(struct state* s, struct input_event* e)
             }
 
             if(e->code == DPAD_DOWN && e->value == 1) {
-                emit_key_press_mod(s, KEY_TAB, (struct mod) { .ctrl = 1 });
+                emit_key_press(s, KEY_F5);
             }
 
             if(e->code == BTN_THUMB && e->value == 1) {
@@ -1026,7 +1026,7 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_G); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
-    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_I); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_K); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
