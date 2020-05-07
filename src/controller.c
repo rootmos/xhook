@@ -927,6 +927,37 @@ static void handle_event(struct state* s, struct input_event* e)
 
             map_dpad_to_mouse(s);
         }
+    } else if(xlib_window_has_class(&s->x, w, "obs")) {
+        if(s->k.b) {
+            if(e->code == DPAD_UP && e->value == 1) {
+                emit_key_press(s, KEY_F9);
+            }
+
+            if(e->code == DPAD_DOWN && e->value == 1) {
+                emit_key_press_mod(s, KEY_F9, (struct mod) { .shift = 1 });
+            }
+
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_F10);
+            }
+        } else {
+            if(e->code == DPAD_DOWN && e->value == 1) {
+                emit_key_press(s, KEY_F1);
+            }
+
+            if(e->code == DPAD_LEFT && e->value == 1) {
+                emit_key_press(s, KEY_F2);
+            }
+
+            if(e->code == DPAD_UP && e->value == 1) {
+                emit_key_press(s, KEY_F5);
+            }
+
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_F8);
+            }
+        }
+
     }
 }
 
@@ -1016,7 +1047,18 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_RELBIT, REL_Y); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, BTN_LEFT); CHECK(r, "ioctl");
 
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F1); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F2); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F3); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F4); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F5); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F6); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F7); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F8); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F9); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F10); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F11); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F12); CHECK(r, "ioctl");
 
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_1); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_2); CHECK(r, "ioctl");
@@ -1031,6 +1073,7 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_S); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_T); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_V); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_W); CHECK(r, "ioctl");
