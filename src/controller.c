@@ -590,6 +590,10 @@ static void launch_menu(struct state* s)
             .callback = emit_key_press_callback,
             .opaque = &(struct key) { .k = KEY_ESC },
         },{
+            .name = "ENTER",
+            .callback = emit_key_press_callback,
+            .opaque = &(struct key) { .k = KEY_ENTER },
+        },{
             .name = "mpv",
             .callback = launch_mpv_menu,
         },{
@@ -942,22 +946,35 @@ static void handle_event(struct state* s, struct input_event* e)
             }
         } else {
             if(e->code == DPAD_DOWN && e->value == 1) {
-                emit_key_press(s, KEY_F1);
-            }
-
-            if(e->code == DPAD_LEFT && e->value == 1) {
-                emit_key_press(s, KEY_F2);
+                emit_key_press(s, KEY_F3);
             }
 
             if(e->code == DPAD_UP && e->value == 1) {
                 emit_key_press(s, KEY_F5);
             }
 
+            if(e->code == DPAD_LEFT && e->value == 1) {
+                emit_key_press(s, KEY_F1);
+            }
+
+            if(e->code == DPAD_RIGHT && e->value == 1) {
+                emit_key_press(s, KEY_F2);
+            }
+
             if(e->code == BTN_THUMB && e->value == 1) {
                 emit_key_press(s, KEY_F8);
             }
         }
+    } else if(xlib_window_has_class(&s->x, w, "Sausage.x86_64")) {
+        if(e->code == BTN_THUMB && e->value == 1) {
+            emit_key_press(s, KEY_Z);
+        }
 
+        if(e->code == BTN_THUMB2 && e->value == 1) {
+            emit_key_press(s, KEY_R);
+        }
+
+        map_dpad_to_arrow_keys(s, e);
     }
 }
 
@@ -1073,6 +1090,7 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_L); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_M); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_Q); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_R); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_S); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_T); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_V); CHECK(r, "ioctl");
