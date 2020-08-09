@@ -985,6 +985,24 @@ static void handle_event(struct state* s, struct input_event* e)
         }
 
         map_dpad_to_arrow_keys(s, e);
+    } else if(xlib_window_has_class(&s->x, w, "Chowdren")) {
+        if(e->code == BTN_THUMB && (e->value == 1 || e->value == 0)) {
+            emit_event(s, EV_KEY, KEY_SPACE, e->value);
+            emit_event(s, EV_SYN, SYN_REPORT, 0);
+        }
+
+        if(e->code == BTN_THUMB2 && (e->value == 1 || e->value == 0)) {
+            emit_event(s, EV_KEY, KEY_BACKSPACE, e->value);
+            emit_event(s, EV_SYN, SYN_REPORT, 0);
+        }
+
+        map_dpad_to_arrow_keys(s, e);
+    } else if(xlib_window_has_class(&s->x, w, "st-256color")) {
+        if(e->code == BTN_THUMB && e->value == 1) {
+            emit_key_press(s, BTN_LEFT);
+        }
+
+        map_dpad_to_mouse(s);
     }
 }
 
@@ -1124,6 +1142,7 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ENTER); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_SPACE); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_TAB); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_BACKSPACE); CHECK(r, "ioctl");
 
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTALT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHTALT); CHECK(r, "ioctl");
