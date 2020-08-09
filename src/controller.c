@@ -476,6 +476,12 @@ static void send_to_workspace(struct state* s, const char* ws)
     }
 }
 
+static void send_and_follow_to_workspace(struct state* s, const char* ws)
+{
+    send_to_workspace(s, ws);
+    goto_workspace(s, ws);
+}
+
 static void select_workspace(struct state* s, struct menu_item* m)
 {
     struct menu_item ms[] = {
@@ -581,6 +587,10 @@ static void launch_menu(struct state* s)
             .name = "send to workspace",
             .callback = select_workspace,
             .opaque = send_to_workspace
+        },{
+            .name = "send and follow to workspace",
+            .callback = select_workspace,
+            .opaque = send_and_follow_to_workspace
         },{
             .name = "toggle status bar",
             .callback = emit_key_press_callback,
