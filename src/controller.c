@@ -28,6 +28,12 @@ static int handle_x11_error(Display* d, XErrorEvent* e)
     return 0;
 }
 
+static void tiny_sleep()
+{
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
+    nanosleep(&ts, NULL);
+}
+
 struct options {
     const char* input_device_path;
     const char* input_device_name;
@@ -283,12 +289,6 @@ static void emit_event(struct state* s,
           e.value);
 }
 
-static void tiny_sleep()
-{
-    struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000000 };
-    nanosleep(&ts, NULL);
-}
-
 struct mod {
     int shift, meta, alt, ctrl, super;
 };
@@ -297,6 +297,19 @@ struct key {
     uint16_t k;
     struct mod m;
 };
+
+static struct key* mk_key_mod(uint16_t k, struct mod m)
+{
+    struct key* key = (struct key*)malloc(sizeof(*key)); CHECK_MALLOC(key);
+    key->k = k;
+    key->m = m;
+    return key;
+}
+
+static struct key* mk_key(uint16_t k)
+{
+    return mk_key_mod(k, (struct mod) { 0 });
+}
 
 static void emit_key_event(struct state* s, uint16_t key, int state,
                            struct mod m)
@@ -351,12 +364,10 @@ static struct menu_item* run_menu(struct state* s,
     int r = pipe(i); CHECK(r, "pipe");
     r = pipe(o); CHECK(r, "pipe");
 
-    xlib_init(&s->x);
+    Window w = xlib_current_window(&s->x);
 
     char cmd[1024];
-    snprintf(LIT(cmd), "dmenu -w %lu %s",
-             xlib_current_window(&s->x),
-             vertical ? "-l 20" : "");
+    snprintf(LIT(cmd), "dmenu -w %lu %s", w, vertical ? "-l 20" : "");
 
     pid_t p = fork(); CHECK(p, "fork");
     if(p == 0) {
@@ -516,54 +527,46 @@ static void run_command_callback(struct state* s, struct menu_item* m)
     system(cmd);
 }
 
-static void launch_mpv_menu(struct state* s, struct menu_item* m)
+static void add_mpv_menu_items(struct menu_item* ms, size_t* i)
 {
-    struct menu_item ms[] = {
-        {
-            .name = "toggle subtitles",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_V },
-        },{
-            .name = "loop current file",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_L, .m = { .shift = 1 } },
-        },{
-            .name = "cycle aspect ration",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_A, .m = { .shift = 1 } },
-        },{
-            .name = "show stats",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_I },
-        },{
-            .name = "toggle stats",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_I, .m = { .shift = 1 } },
-        }
+    ms[(*i)++] = (struct menu_item) {
+        .name = "toggle subtitles",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_V),
     };
 
-    run_menu(s, ms, LENGTH(ms), 1);
+    ms[(*i)++] = (struct menu_item) {
+        .name = "cycle aspect ration",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key_mod(KEY_A, (struct mod) { .shift = 1 }),
+    };
+
+    ms[(*i)++] = (struct menu_item) {
+        .name = "show stats",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_I),
+    };
+
+    ms[(*i)++] = (struct menu_item) {
+        .name = "toggle stats",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key_mod(KEY_I, (struct mod) { .shift = 1 }),
+    };
 }
 
-static void launch_chromium_menu(struct state* s, struct menu_item* m)
+static void add_chromium_menu_items(struct menu_item* ms, size_t* i)
 {
-    struct menu_item ms[] = {
-        {
-            .name = "refresh",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_F5 },
-        },{
-            .name = "spawn",
-            .callback = run_command_callback,
-            .opaque = "chromium",
-        },{
-            .name = "new tab",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_T, .m = { .ctrl = 1 } },
-        }
+    ms[(*i)++] = (struct menu_item) {
+        .name = "new tab",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key_mod(KEY_T, (struct mod) { .ctrl = 1 }),
     };
 
-    run_menu(s, ms, LENGTH(ms), 1);
+    ms[(*i)++] = (struct menu_item) {
+        .name = "new window",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key_mod(KEY_N, (struct mod) { .ctrl = 1 }),
+    };
 }
 
 static void launch_menu(struct state* s)
@@ -576,47 +579,62 @@ static void launch_menu(struct state* s)
 
     p = fork(); CHECK(p, "fork");
     if(p != 0) exit(0);
-    s->x.dpy = NULL;
 
-    struct menu_item ms[] = {
-        {
-            .name = "goto workspace",
-            .callback = select_workspace,
-            .opaque = goto_workspace
-        },{
-            .name = "send to workspace",
-            .callback = select_workspace,
-            .opaque = send_to_workspace
-        },{
-            .name = "send and follow to workspace",
-            .callback = select_workspace,
-            .opaque = send_and_follow_to_workspace
-        },{
-            .name = "toggle status bar",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_B, .m = { .meta = 1 } },
-        },{
-            .name = "ESC",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_ESC },
-        },{
-            .name = "ENTER",
-            .callback = emit_key_press_callback,
-            .opaque = &(struct key) { .k = KEY_ENTER },
-        },{
-            .name = "mpv",
-            .callback = launch_mpv_menu,
-        },{
-            .name = "chromium",
-            .callback = launch_chromium_menu,
-        },{
-            .name = "kill controller",
-            .callback = run_command_callback,
-            .opaque = "killall controller",
-        }
+    s->x.dpy = NULL;
+    xlib_init(&s->x);
+    Window w = xlib_current_window(&s->x);
+
+    struct menu_item ms[256];
+    size_t i = 0;
+    ms[i++] = (struct menu_item) {
+        .name = "goto workspace",
+        .callback = select_workspace,
+        .opaque = goto_workspace
     };
 
-    run_menu(s, ms, LENGTH(ms), 1);
+    ms[i++] = (struct menu_item) {
+        .name = "send to workspace",
+        .callback = select_workspace,
+        .opaque = send_to_workspace
+    };
+
+    ms[i++] = (struct menu_item) {
+        .name = "send and follow to workspace",
+        .callback = select_workspace,
+        .opaque = send_and_follow_to_workspace
+    };
+
+    ms[i++] = (struct menu_item) {
+        .name = "toggle status bar",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key_mod(KEY_B, (struct mod) { .meta = 1 }),
+    };
+
+    if(xlib_window_has_class(&s->x, w, "mpv")) {
+        add_mpv_menu_items(ms, &i);
+    } else if(xlib_window_has_class(&s->x, w, "chromium")) {
+        add_chromium_menu_items(ms, &i);
+    } else {
+        ms[i++] = (struct menu_item) {
+            .name = "ESC",
+            .callback = emit_key_press_callback,
+            .opaque = mk_key(KEY_ESC),
+        };
+
+        ms[i++] = (struct menu_item) {
+            .name = "ENTER",
+            .callback = emit_key_press_callback,
+            .opaque = mk_key(KEY_ENTER),
+        };
+    }
+
+    ms[i++] = (struct menu_item) {
+        .name = "kill controller",
+        .callback = run_command_callback,
+        .opaque = "killall controller",
+    };
+
+    run_menu(s, ms, i, 1);
     exit(0);
 }
 
@@ -1108,6 +1126,7 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_1); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_2); CHECK(r, "ioctl");
 
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_A); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_B); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_C); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F); CHECK(r, "ioctl");
