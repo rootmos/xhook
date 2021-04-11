@@ -34,6 +34,20 @@ static void tiny_sleep()
     nanosleep(&ts, NULL);
 }
 
+static void write_string_to_file(const char* fn, const char* s)
+{
+    int fd = open(fn, O_WRONLY); CHECK(fd, "open(%s)", fn);
+
+    size_t l = strlen(s);
+    int r = write(fd, s, l);
+    CHECK(r, "write");
+    if(r != l) {
+        failwith("unexpected partial write");
+    }
+
+    r = close(fd); CHECK(r, "close");
+}
+
 struct options {
     const char* input_device_path;
     const char* input_device_name;
@@ -124,7 +138,7 @@ static Window xlib_current_window(struct xlib_state* st)
     return w;
 }
 
-const char* xlib_window_name(struct xlib_state* st, Window w)
+const char* xlib_window_name(struct xlib_state* st, Window w, size_t* l)
 {
     static char buf[1024];
 
@@ -135,7 +149,7 @@ const char* xlib_window_name(struct xlib_state* st, Window w)
     int fmt;
     unsigned long nitems, remaining;
     unsigned char* b = NULL;
-    int res = XGetWindowProperty(st->dpy, w, a, 0L, sizeof(buf), False, T,
+    int res = XGetWindowProperty(st->dpy, w, a, 0L, sizeof(buf)-1, False, T,
                                  &t, &fmt, &nitems, &remaining, &b);
 
     if(res != Success) {
@@ -159,6 +173,11 @@ const char* xlib_window_name(struct xlib_state* st, Window w)
 
     memcpy(buf, b, nitems+1);
     XFree(b);
+
+    if(l) {
+        *l = nitems;
+    }
+
     return buf;
 }
 
@@ -496,10 +515,7 @@ static void send_and_follow_to_workspace(struct state* s, const char* ws)
 static void select_workspace(struct state* s, struct menu_item* m)
 {
     struct menu_item ms[] = {
-        { .name = "w" },
         { .name = "v" },
-        { .name = "m" },
-        { .name = "c" },
         { .name = "g" },
         { .name = "1" },
         { .name = "2" },
@@ -507,6 +523,9 @@ static void select_workspace(struct state* s, struct menu_item* m)
         { .name = "4" },
         { .name = "5" },
         { .name = "6" },
+        { .name = "w" },
+        { .name = "m" },
+        { .name = "c" },
     };
 
     struct menu_item* choice = run_menu(s, ms, LENGTH(ms), 0);
@@ -856,35 +875,85 @@ static void handle_event(struct state* s, struct input_event* e)
     }
 
     if(xlib_window_has_class(&s->x, w, "feh")) {
-        if(s->k.b) {
-            if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_UP, e->value,
-                               (struct mod) { .ctrl = 1});
-            }
+        size_t l;
+        const char* n = xlib_window_name(&s->x, w, &l);
+        debug("wn: %s", n);
+        if(l >= 7 && 0 == strncmp(n, "theme: ", 7)) {
+            const char* fn = n + 7;
+            debug("theme: input=%s", fn);
 
-            if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_DOWN, e->value,
-                               (struct mod) { .ctrl = 1});
-            }
+            if(s->k.b) {
+                if(e->code == DPAD_UP && e->value == 1) {
+                    write_string_to_file(fn, "s 1\n");
+                }
 
-            if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_LEFT, e->value,
-                               (struct mod) { .ctrl = 1});
-            }
+                if(e->code == DPAD_RIGHT && e->value == 1) {
+                    write_string_to_file(fn, "s 2\n");
+                }
 
-            if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
-                emit_key_event(s, KEY_RIGHT, e->value,
-                               (struct mod) { .ctrl = 1});
-            }
+                if(e->code == DPAD_DOWN && e->value == 1) {
+                    write_string_to_file(fn, "s 4\n");
+                }
 
-            if(e->code == BTN_THUMB && e->value == 1) {
-                emit_key_press(s, KEY_Z);
+                if(e->code == DPAD_LEFT && e->value == 1) {
+                    write_string_to_file(fn, "s 3\n");
+                }
+
+                if(e->code == BTN_THUMB && e->value == 1) {
+                    write_string_to_file(fn, "s\n");
+                }
+            } else {
+                if(e->code == DPAD_UP && e->value == 1) {
+                    write_string_to_file(fn, "1\n");
+                }
+
+                if(e->code == DPAD_RIGHT && e->value == 1) {
+                    write_string_to_file(fn, "2\n");
+                }
+
+                if(e->code == DPAD_DOWN && e->value == 1) {
+                    write_string_to_file(fn, "4\n");
+                }
+
+                if(e->code == DPAD_LEFT && e->value == 1) {
+                    write_string_to_file(fn, "3\n");
+                }
+
+                if(e->code == BTN_THUMB && e->value == 1) {
+                    write_string_to_file(fn, "0\n");
+                }
             }
         } else {
-            map_dpad_to_arrow_keys(s, e);
+            if(s->k.b) {
+                if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
+                    emit_key_event(s, KEY_UP, e->value,
+                                   (struct mod) { .ctrl = 1});
+                }
 
-            if(e->code == BTN_THUMB && e->value == 1) {
-                emit_key_press(s, KEY_H);
+                if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
+                    emit_key_event(s, KEY_DOWN, e->value,
+                                   (struct mod) { .ctrl = 1});
+                }
+
+                if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
+                    emit_key_event(s, KEY_LEFT, e->value,
+                                   (struct mod) { .ctrl = 1});
+                }
+
+                if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
+                    emit_key_event(s, KEY_RIGHT, e->value,
+                                   (struct mod) { .ctrl = 1});
+                }
+
+                if(e->code == BTN_THUMB && e->value == 1) {
+                    emit_key_press(s, KEY_Z);
+                }
+            } else {
+                map_dpad_to_arrow_keys(s, e);
+
+                if(e->code == BTN_THUMB && e->value == 1) {
+                    emit_key_press(s, KEY_H);
+                }
             }
         }
     } else if(xlib_window_has_class(&s->x, w, "mpv")) {
