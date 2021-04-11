@@ -119,7 +119,7 @@ static Window xlib_current_window(struct xlib_state* st)
     int res = XGetInputFocus(st->dpy, &w, &rv);
     if(res != 1) failwith("XGetInputFocus failed: %d", res);
 
-    trace("focused window: %lu", w);
+    trace("focused window: %lu (%lx)", w, w);
 
     return w;
 }
@@ -536,6 +536,18 @@ static void add_mpv_menu_items(struct menu_item* ms, size_t* i)
     };
 
     ms[(*i)++] = (struct menu_item) {
+        .name = "volume up",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_KPASTERISK),
+    };
+
+    ms[(*i)++] = (struct menu_item) {
+        .name = "volume down",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_SLASH),
+    };
+
+    ms[(*i)++] = (struct menu_item) {
         .name = "cycle aspect ration",
         .callback = emit_key_press_callback,
         .opaque = mk_key_mod(KEY_A, (struct mod) { .shift = 1 }),
@@ -554,6 +566,15 @@ static void add_mpv_menu_items(struct menu_item* ms, size_t* i)
     };
 }
 
+static void add_st_menu_items(struct menu_item* ms, size_t* i)
+{
+    ms[(*i)++] = (struct menu_item) {
+        .name = "toggle light/dark mode",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_F6),
+    };
+}
+
 static void add_chromium_menu_items(struct menu_item* ms, size_t* i)
 {
     ms[(*i)++] = (struct menu_item) {
@@ -566,6 +587,21 @@ static void add_chromium_menu_items(struct menu_item* ms, size_t* i)
         .name = "new window",
         .callback = emit_key_press_callback,
         .opaque = mk_key_mod(KEY_N, (struct mod) { .ctrl = 1 }),
+    };
+}
+
+static void add_default_menu_items(struct menu_item* ms, size_t* i)
+{
+    ms[(*i)++] = (struct menu_item) {
+        .name = "ESC",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_ESC),
+    };
+
+    ms[(*i)++] = (struct menu_item) {
+        .name = "ENTER",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_ENTER),
     };
 }
 
@@ -604,29 +640,33 @@ static void launch_menu(struct state* s)
         .opaque = send_and_follow_to_workspace
     };
 
+    if(xlib_window_has_class(&s->x, w, "mpv")) {
+        add_mpv_menu_items(ms, &i);
+    } else if(xlib_window_has_class(&s->x, w, "chromium")) {
+        add_chromium_menu_items(ms, &i);
+    } else if(xlib_window_has_class(&s->x, w, "st-256color")) {
+        add_st_menu_items(ms, &i);
+    } else {
+        add_default_menu_items(ms, &i);
+    }
+
     ms[i++] = (struct menu_item) {
         .name = "toggle status bar",
         .callback = emit_key_press_callback,
         .opaque = mk_key_mod(KEY_B, (struct mod) { .meta = 1 }),
     };
 
-    if(xlib_window_has_class(&s->x, w, "mpv")) {
-        add_mpv_menu_items(ms, &i);
-    } else if(xlib_window_has_class(&s->x, w, "chromium")) {
-        add_chromium_menu_items(ms, &i);
-    } else {
-        ms[i++] = (struct menu_item) {
-            .name = "ESC",
-            .callback = emit_key_press_callback,
-            .opaque = mk_key(KEY_ESC),
-        };
+    ms[i++] = (struct menu_item) {
+        .name = "close notifications",
+        .callback = run_command_callback,
+        .opaque = "dunstctl close-all",
+    };
 
-        ms[i++] = (struct menu_item) {
-            .name = "ENTER",
-            .callback = emit_key_press_callback,
-            .opaque = mk_key(KEY_ENTER),
-        };
-    }
+    ms[i++] = (struct menu_item) {
+        .name = "pop old notification",
+        .callback = run_command_callback,
+        .opaque = "dunstctl history-pop",
+    };
 
     ms[i++] = (struct menu_item) {
         .name = "kill controller",
@@ -930,7 +970,19 @@ static void handle_event(struct state* s, struct input_event* e)
             emit_key_press(s, KEY_ESC);
         }
 
-        map_dpad_to_arrow_keys(s, e);
+        if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
+            emit_event(s, EV_KEY, KEY_UP, e->value);
+            emit_event(s, EV_SYN, SYN_REPORT, 0);
+        }
+
+        if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
+            emit_event(s, EV_KEY, KEY_DOWN, e->value);
+            emit_event(s, EV_SYN, SYN_REPORT, 0);
+        }
+
+        if((e->code == DPAD_RIGHT || e->code == DPAD_LEFT) && e->value == 1) {
+            emit_key_press_mod(s, KEY_ENTER, (struct mod) { .ctrl = 1 });
+        }
     } else if(xlib_window_has_class(&s->x, w, "spotify")) {
         if(s->k.b) {
             if(e->code == BTN_THUMB && e->value == 1) {
@@ -1021,6 +1073,31 @@ static void handle_event(struct state* s, struct input_event* e)
         }
 
         map_dpad_to_mouse(s);
+    } else if(xlib_window_has_class(&s->x, w, "mednafen")) {
+        if(e->code == DPAD_UP && e->value == 1) {
+            emit_key_press(s, KEY_F5);
+        }
+
+        if(e->code == DPAD_DOWN && e->value == 1) {
+            emit_key_press(s, KEY_F7);
+        }
+
+        if(e->code == DPAD_RIGHT && e->value == 1) {
+            emit_key_press(s, KEY_KPPLUS);
+        }
+
+        if(e->code == DPAD_LEFT && e->value == 1) {
+            emit_key_press(s, KEY_EQUAL);
+        }
+
+        if(e->code == BTN_THUMB && (e->value == 1 || e->value == 0)) {
+            emit_event(s, EV_KEY, KEY_ENTER, e->value);
+            emit_event(s, EV_SYN, SYN_REPORT, 0);
+        }
+
+        if(e->code == BTN_THUMB2 && e->value == 1) {
+            emit_key_press(s, KEY_SPACE);
+        }
     }
 }
 
@@ -1129,6 +1206,8 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_A); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_B); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_C); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_D); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_E); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_F); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_G); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_H); CHECK(r, "ioctl");
@@ -1150,7 +1229,9 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOLLAR); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFTBRACE); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_EQUAL); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_A); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_102ND); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_GRAVE); CHECK(r, "ioctl");
 
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_UP); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOWN); CHECK(r, "ioctl");
