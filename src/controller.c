@@ -1,13 +1,16 @@
+#include <arpa/inet.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <time.h>
 
@@ -34,14 +37,22 @@ static void tiny_sleep()
     nanosleep(&ts, NULL);
 }
 
-static void write_string_to_file(const char* fn, const char* s)
+static void send_theme_command(const char* cmd)
 {
-    int fd = open(fn, O_WRONLY); CHECK(fd, "open(%s)", fn);
+    debug("sending theme command: %s", cmd);
+    int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); CHECK(fd, "UDP socket");
 
-    size_t l = strlen(s);
-    int r = write(fd, s, l);
-    CHECK(r, "write");
-    if(r != l) {
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(7496);
+    int r = inet_aton("127.0.0.1", &addr.sin_addr);
+    CHECK_IF(r != 1, "unable to parse addr");
+
+    size_t l = strlen(cmd);
+    ssize_t s = sendto(fd, cmd, l, 0,
+                       (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
+    CHECK(l, "write");
+    if(s != l) {
         failwith("unexpected partial write");
     }
 
@@ -870,57 +881,56 @@ static void handle_event(struct state* s, struct input_event* e)
         return;
     }
 
-    if(e->code == BTN_BASE4 && e->value == 1) {
-        emit_key_press_mod(s, KEY_K, (struct mod) { .alt = 1 });
+
+    if(!xlib_window_has_class(&s->x, w, "mednafen")) {
+        if(e->code == BTN_BASE4 && e->value == 1) {
+            emit_key_press_mod(s, KEY_K, (struct mod) { .alt = 1 });
+        }
     }
 
     if(xlib_window_has_class(&s->x, w, "feh")) {
         size_t l;
         const char* n = xlib_window_name(&s->x, w, &l);
-        debug("wn: %s", n);
-        if(l >= 7 && 0 == strncmp(n, "theme: ", 7)) {
-            const char* fn = n + 7;
-            debug("theme: input=%s", fn);
-
+        if(l == 5 && 0 == strncmp(n, "theme", 5)) {
             if(s->k.b) {
                 if(e->code == DPAD_UP && e->value == 1) {
-                    write_string_to_file(fn, "s 1\n");
+                    send_theme_command("s 1");
                 }
 
                 if(e->code == DPAD_RIGHT && e->value == 1) {
-                    write_string_to_file(fn, "s 2\n");
+                    send_theme_command("s 2");
                 }
 
                 if(e->code == DPAD_DOWN && e->value == 1) {
-                    write_string_to_file(fn, "s 4\n");
+                    send_theme_command("s 4");
                 }
 
                 if(e->code == DPAD_LEFT && e->value == 1) {
-                    write_string_to_file(fn, "s 3\n");
+                    send_theme_command("s 3");
                 }
 
                 if(e->code == BTN_THUMB && e->value == 1) {
-                    write_string_to_file(fn, "s\n");
+                    send_theme_command("0");
                 }
             } else {
                 if(e->code == DPAD_UP && e->value == 1) {
-                    write_string_to_file(fn, "1\n");
+                    send_theme_command("1");
                 }
 
                 if(e->code == DPAD_RIGHT && e->value == 1) {
-                    write_string_to_file(fn, "2\n");
+                    send_theme_command("2");
                 }
 
                 if(e->code == DPAD_DOWN && e->value == 1) {
-                    write_string_to_file(fn, "4\n");
+                    send_theme_command("4");
                 }
 
                 if(e->code == DPAD_LEFT && e->value == 1) {
-                    write_string_to_file(fn, "3\n");
+                    send_theme_command("3");
                 }
 
                 if(e->code == BTN_THUMB && e->value == 1) {
-                    write_string_to_file(fn, "0\n");
+                    send_theme_command("T");
                 }
             }
         } else {
