@@ -63,6 +63,7 @@ struct options {
     const char* input_device_path;
     const char* input_device_name;
     int input_device_name_index;
+    int wait_for_device_sec;
 };
 
 struct xlib_state {
@@ -77,7 +78,6 @@ struct keys {
 };
 
 struct state {
-    int running;
     int input_fd;
     int uinput_fd;
 
@@ -96,6 +96,7 @@ static void print_usage(int fd, const char* prog)
     dprintf(fd, "  -i PATH  read input device at PATH\n");
     dprintf(fd, "  -n NAME  select input device with NAME\n");
     dprintf(fd, "  -I INDEX select the INDEX:th device with matching name\n");
+    dprintf(fd, "  -w SEC   retry device every SEC seconds\n");
     dprintf(fd, "  -h       print this message\n");
 }
 
@@ -105,7 +106,7 @@ static void parse_options(struct options* o, int argc, char* argv[])
     o->input_device_name_index = -1;
 
     int res;
-    while((res = getopt(argc, argv, "i:n:I:h")) != -1) {
+    while((res = getopt(argc, argv, "i:n:I:w:h")) != -1) {
         switch(res) {
         case 'i':
             o->input_device_path = strdup(optarg);
@@ -119,6 +120,13 @@ static void parse_options(struct options* o, int argc, char* argv[])
             res = sscanf(optarg, "%d", &o->input_device_name_index);
             if(res != 1) {
                 dprintf(2, "unable to parse index: %s\n", optarg);
+                exit(1);
+            }
+            break;
+        case 'w':
+            res = sscanf(optarg, "%d", &o->wait_for_device_sec);
+            if(res != 1) {
+                dprintf(2, "unable to parse seconds: %s\n", optarg);
                 exit(1);
             }
             break;
@@ -1255,27 +1263,45 @@ static int find_device_based_on_name(const char* name, int index)
     return choice;
 }
 
-static void state_init(struct state* s, const struct options* o)
+static void connect_input_device(struct state* s, const struct options* o)
 {
-    memset(s, 0, sizeof(*s));
-
-    s->running = 1;
+    if(s->input_fd >= 0) {
+        int r = close(s->input_fd); CHECK(r, "close");
+    }
 
     if(o->input_device_path != NULL) {
         info("input device: %s", o->input_device_path);
         s->input_fd = open(o->input_device_path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
         CHECK(s->input_fd, "open(%s)", o->input_device_path);
     } else if(o->input_device_name != NULL) {
-        s->input_fd = find_device_based_on_name(
-            o->input_device_name, o->input_device_name_index);
-        if(s->input_fd == -1) {
-            error("unable to find device with name: %s",
-                  o->input_device_name);
-            exit(1);
+        while(1) {
+            s->input_fd = find_device_based_on_name(
+                o->input_device_name, o->input_device_name_index);
+            if(s->input_fd == -1) {
+                if(o->wait_for_device_sec) {
+                    info("unable to find device (will retry in %ds): %s",
+                         o->wait_for_device_sec, o->input_device_name);
+                    sleep(o->wait_for_device_sec);
+                } else {
+                    error("unable to find device with name: %s",
+                          o->input_device_name);
+                    exit(1);
+                }
+            } else {
+                info("connected to device with name: %s",
+                     o->input_device_name);
+                break;
+            }
         }
     } else {
         failwith("input device not specified");
     }
+}
+
+static void state_init(struct state* s, const struct options* o)
+{
+    memset(s, 0, sizeof(*s));
+    s->input_fd = -1;
 
     const char* uinput_path = "/dev/uinput";
     s->uinput_fd = open(uinput_path, O_WRONLY | O_CLOEXEC);
@@ -1377,33 +1403,27 @@ static void state_deinit(struct state* s)
     r = close(s->uinput_fd); CHECK(r, "close uinput");
 }
 
-int main(int argc, char* argv[])
+void loop(struct state* s)
 {
-    struct options o;
-    parse_options(&o, argc, argv);
-
-    struct state s;
-    state_init(&s, &o);
-
-    struct input_event e;
-    while(s.running) {
+    int running = 1;
+    while(running) {
         struct pollfd fds[] = {
-            { .fd = s.input_fd, .events = POLLIN },
+            { .fd = s->input_fd, .events = POLLIN },
         };
 
-        int timeout = s.mouse_mode ? 10 : 10000;
+        int timeout = s->mouse_mode ? 10 : 10000;
         int r = poll(fds, LENGTH(fds), timeout); CHECK(r, "poll");
         if(r == 0) {
             debug("poll timeout: mouse_mode=%d timeout=%dms",
-                  s.mouse_mode, timeout);
-            handle_timeout(&s);
+                  s->mouse_mode, timeout);
+            handle_timeout(s);
         } else {
             trace("poll events: %d", r);
 
             if(fds[0].revents & POLLERR) {
                 if(fds[0].revents & POLLHUP) {
                     warning("input device disconnected");
-                    s.running = 0;
+                    running = 0;
                     fds[0].revents &= ~POLLHUP;
                 } else {
                     failwith("unhandled poll error condition: %hd",
@@ -1414,8 +1434,9 @@ int main(int argc, char* argv[])
             }
 
             if(fds[0].revents & POLLIN) {
-                while(read_event(&s, &e)) {
-                    handle_event(&s, &e);
+                struct input_event e;
+                while(read_event(s, &e)) {
+                    handle_event(s, &e);
                 }
 
                 fds[0].revents &= ~POLLIN;
@@ -1430,6 +1451,20 @@ int main(int argc, char* argv[])
             }
         }
     }
+}
+
+int main(int argc, char* argv[])
+{
+    struct options o;
+    parse_options(&o, argc, argv);
+
+    struct state s;
+    state_init(&s, &o);
+
+    do {
+        connect_input_device(&s, &o);
+        loop(&s);
+    } while(o.wait_for_device_sec);
 
     state_deinit(&s);
 

@@ -3,10 +3,10 @@ Description=Controller mapping service
 
 [Service]
 Restart=always
-RestartSec=5
+RestartSec=15
 WorkingDirectory=~
 ExecStartPre=/bin/systemctl --user import-environment DISPLAY XAUTHORITY
-ExecStart=$PREFIX/bin/controller -n $INPUT_DEVICE_NAME -I 0
+ExecStart=$PREFIX/bin/controller -n $INPUT_DEVICE_NAME -I 0 -w 5
 
 [Install]
 WantedBy=default.target
