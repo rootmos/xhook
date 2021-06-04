@@ -620,6 +620,27 @@ static void add_chromium_menu_items(struct menu_item* ms, size_t* i)
     };
 }
 
+static void add_feh_menu_items(struct menu_item* ms, size_t* i)
+{
+    ms[(*i)++] = (struct menu_item) {
+        .name = "1",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_1),
+    };
+
+    ms[(*i)++] = (struct menu_item) {
+        .name = "2",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_2),
+    };
+
+    ms[(*i)++] = (struct menu_item) {
+        .name = "9",
+        .callback = emit_key_press_callback,
+        .opaque = mk_key(KEY_9),
+    };
+}
+
 static void add_default_menu_items(struct menu_item* ms, size_t* i)
 {
     ms[(*i)++] = (struct menu_item) {
@@ -676,6 +697,8 @@ static void launch_menu(struct state* s)
         add_chromium_menu_items(ms, &i);
     } else if(xlib_window_has_class(&s->x, w, "st-256color")) {
         add_st_menu_items(ms, &i);
+    } else if(xlib_window_has_class(&s->x, w, "feh")) {
+        add_feh_menu_items(ms, &i);
     } else {
         add_default_menu_items(ms, &i);
     }
