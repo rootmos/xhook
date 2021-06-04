@@ -1269,8 +1269,9 @@ static void state_init(struct state* s, const struct options* o)
         s->input_fd = find_device_based_on_name(
             o->input_device_name, o->input_device_name_index);
         if(s->input_fd == -1) {
-            failwith("unable to find device with name: %s",
-                     o->input_device_name);
+            error("unable to find device with name: %s",
+                  o->input_device_name);
+            exit(1);
         }
     } else {
         failwith("input device not specified");
