@@ -1183,6 +1183,42 @@ static void handle_event(struct state* s, struct input_event* e)
         }
 
         map_dpad_to_mouse(s);
+    } else if(xlib_window_has_class(&s->x, w, "audio-journal")) {
+        if(s->k.b) {
+            if(e->code == DPAD_LEFT && e->value == 1) {
+                emit_key_press(s, KEY_HOME);
+            }
+
+            if(e->code == DPAD_RIGHT && e->value == 1) {
+                emit_key_press(s, KEY_END);
+            }
+        } else {
+            if(e->code == DPAD_UP && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_PAGEUP, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            if(e->code == DPAD_DOWN && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_PAGEDOWN, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            if(e->code == DPAD_LEFT && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_LEFT, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            if(e->code == DPAD_RIGHT && (e->value == 1 || e->value == 0)) {
+                emit_event(s, EV_KEY, KEY_RIGHT, e->value);
+                emit_event(s, EV_SYN, SYN_REPORT, 0);
+            }
+
+            if(e->code == BTN_THUMB && e->value == 1) {
+                emit_key_press(s, KEY_SPACE);
+            }
+        }
+    }
+    /*
     } else if(xlib_window_has_class(&s->x, w, "mednafen")) {
         if(e->code == DPAD_UP && e->value == 1) {
             emit_key_press(s, KEY_F5);
@@ -1209,6 +1245,7 @@ static void handle_event(struct state* s, struct input_event* e)
             emit_key_press(s, KEY_SPACE);
         }
     }
+    */
 }
 
 static int find_device_based_on_name(const char* name, int index)
@@ -1366,6 +1403,11 @@ static void state_init(struct state* s, const struct options* o)
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_DOWN); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_LEFT); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_RIGHT); CHECK(r, "ioctl");
+
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_PAGEUP); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_PAGEDOWN); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_HOME); CHECK(r, "ioctl");
+    r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_END); CHECK(r, "ioctl");
 
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ESC); CHECK(r, "ioctl");
     r = ioctl(s->uinput_fd, UI_SET_KEYBIT, KEY_ENTER); CHECK(r, "ioctl");
