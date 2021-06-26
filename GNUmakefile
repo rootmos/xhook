@@ -5,7 +5,9 @@ export PREFIX ?= $(HOME)/.local
 export INPUT_DEVICE_NAME ?= "SZMy-power LTD CO.  Dual Box WII"
 
 run: build
-	$(BUILD)/controller -n $(INPUT_DEVICE_NAME) -I 0
+	timeout 3s $(BUILD)/xhook
+
+#	$(BUILD)/controller -n $(INPUT_DEVICE_NAME) -I 0
 
 install: build
 	install --strip -D -t $(PREFIX)/bin \
