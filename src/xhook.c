@@ -2,6 +2,7 @@
 #include <poll.h>
 #include <sys/signalfd.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -16,8 +17,16 @@ static int handle_x11_error(Display* d, XErrorEvent* e)
     return 0;
 }
 
+enum layout {
+    DVORAK,
+    ENGLISH,
+    SWEDISH,
+};
+
 struct state {
     int running;
+
+    enum layout layout;
 
     int sfd;
 
@@ -175,8 +184,52 @@ static void x11_current_window(struct window* w, const struct state* st)
     }
 }
 
+static int window_has_class(const struct window* w, const char* cls)
+{
+    for(size_t i = 0; i < w->n_class; i++) {
+        if(strcmp(w->class[i], cls) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void set_layout(struct state* st, enum layout l)
+{
+    if(st->layout == l) {
+        return;
+    }
+
+    const char* cmd;
+    switch(l) {
+    case DVORAK: cmd = "dv"; break;
+    case ENGLISH: cmd = "us"; break;
+    case SWEDISH: cmd = "sv"; break;
+    default: failwith("unsupported layout: %d", l);
+    }
+
+    debug("running: %s", cmd);
+    int ec = system(cmd);
+    CHECK(ec, "system(%s)", cmd);
+
+    if(ec != 0) {
+        warning("changing to layout %s failed with exit code: %d", cmd, ec);
+        return;
+    }
+
+    info("switched layout: %s", cmd);
+    st->layout = l;
+}
+
 static void focus_changed(struct state* st, const struct window* w)
 {
+    if(window_has_class(w, "musescore")
+       || window_has_class(w ,"BaldursGate")) {
+        set_layout(st, ENGLISH);
+    } else {
+        set_layout(st, DVORAK);
+    }
 }
 
 static void x11_handle_event(struct state* st)
@@ -258,6 +311,8 @@ int main(int argc, char* argv[])
 {
     struct state st = {
         .running = 1,
+
+        .layout = DVORAK,
     };
 
     signalfd_init(&st);
