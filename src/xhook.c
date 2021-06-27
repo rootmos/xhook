@@ -224,9 +224,9 @@ static void set_layout(struct state* st, enum layout l)
 
     const char* cmd;
     switch(l) {
-    case DVORAK: cmd = "dv"; break;
-    case ENGLISH: cmd = "us"; break;
-    case SWEDISH: cmd = "sv"; break;
+    case DVORAK: cmd = "~/bin/dv"; break;
+    case ENGLISH: cmd = "~/bin/us"; break;
+    case SWEDISH: cmd = "~/bin/sv"; break;
     default: failwith("unsupported layout: %d", l);
     }
 
