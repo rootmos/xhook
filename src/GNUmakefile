@@ -7,7 +7,7 @@ LDFLAGS = -lrt -lr -lX11
 CFLAGS += -I$(BUILD)/usr/include
 LDFLAGS += -L$(BUILD)/usr/lib
 
-all: $(foreach i, controller outline-current-window, $(BUILD)/$(i))
+all: $(foreach i, controller outline-current-window xhook, $(BUILD)/$(i))
 
 $(BUILD)/%: %.c
 	$(CC) -o "$@" $(CFLAGS) $< $(LDFLAGS)

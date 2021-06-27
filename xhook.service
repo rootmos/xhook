@@ -1,0 +1,12 @@
+[Unit]
+Description=xhook focus tracking service
+
+[Service]
+Restart=always
+RestartSec=15
+WorkingDirectory=~
+ExecStartPre=/bin/systemctl --user import-environment DISPLAY XAUTHORITY
+ExecStart=$PREFIX/bin/xhook
+
+[Install]
+WantedBy=default.target
