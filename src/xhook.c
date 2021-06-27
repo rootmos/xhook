@@ -1,8 +1,9 @@
 #include <errno.h>
 #include <poll.h>
-#include <sys/signalfd.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/signalfd.h>
+#include <sys/timerfd.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -25,10 +26,11 @@ enum layout {
 
 struct state {
     int running;
+    Window active;
 
     enum layout layout;
 
-    int sfd;
+    int sfd, tfd;
 
     Display* dpy;
     int scr;
@@ -79,7 +81,7 @@ struct window
     size_t n_class;
 };
 
-static void x11_window_name(const struct state* st, Window w, char* buf)
+static int x11_window_name(const struct state* st, Window w, char* buf)
 {
     Atom t = None;
     int fmt;
@@ -93,14 +95,15 @@ static void x11_window_name(const struct state* st, Window w, char* buf)
                                  &fmt, &nitems, &remaining, &b);
 
     if(res != Success) {
-        failwith("XGetWindowProperty(%lu, %s) failed",
-                 w, XGetAtomName(st->dpy, st->wm_class));
+        debug("XGetWindowProperty(%lu, %s) failed",
+              w, XGetAtomName(st->dpy, st->wm_class));
+        return -1;
     }
 
     if(t == None) {
         debug("window %lu has no name", w);
         buf[0] = 0;
-        return;
+        return 0;
     }
 
     if(t != st->utf8_string) {
@@ -116,10 +119,12 @@ static void x11_window_name(const struct state* st, Window w, char* buf)
 
     memcpy(buf, b, nitems+1);
     XFree(b);
+    return 0;
 }
 
 static size_t x11_window_class(const struct state* st, Window w,
-                               char cls[MAX_CLASS][MAX_STR])
+                               char cls[MAX_CLASS][MAX_STR],
+                               size_t* n_cls)
 {
     Atom t = None;
     int fmt;
@@ -133,13 +138,14 @@ static size_t x11_window_class(const struct state* st, Window w,
                                  &fmt, &nitems, &remaining, &b);
 
     if(res != Success) {
-        failwith("XGetWindowProperty(%lu, %s) failed",
-                 w, XGetAtomName(st->dpy, st->wm_class));
-
+        debug("XGetWindowProperty(%lu, %s) failed",
+              w, XGetAtomName(st->dpy, st->wm_class));
+        return -1;
     }
 
     if(t == None) {
         trace("window %lu has no class", w);
+        *n_cls = 0;
         return 0;
     }
 
@@ -163,25 +169,29 @@ static size_t x11_window_class(const struct state* st, Window w,
         p += l + 1;
     }
 
+    *n_cls = i;
+
     XFree(b);
-    return i;
+    return 0;
 }
 
-static void x11_current_window(struct window* w, const struct state* st)
+static int x11_window(const struct state* st, Window wx, struct window* w)
 {
-    int rt;
-    if(XGetInputFocus(st->dpy, &w->window, &rt) != 1) {
-        failwith("XGetInputFocus failed");
+    w->window = wx;
+
+    if(x11_window_name(st, wx, w->name) != 0) {
+        return -1;
     }
-    debug("focused window: %lu (%lx)", w->window, w->window);
+    debug("window %lu name: %s", wx, w->name);
 
-    x11_window_name(st, w->window, w->name);
-    debug("focused window name: %s", w->name);
-
-    w->n_class = x11_window_class(st, w->window, w->class);
+    if(x11_window_class(st, wx, w->class, &w->n_class) != 0) {
+        return -1;
+    }
     for(size_t i = 0; i < w->n_class; i++) {
-        debug("focused window class: %s", w->class[i]);
+        debug("window %lu class: %s", wx, w->class[i]);
     }
+
+    return 0;
 }
 
 static int window_has_class(const struct window* w, const char* cls)
@@ -193,6 +203,17 @@ static int window_has_class(const struct window* w, const char* cls)
     }
 
     return 0;
+}
+
+static Window x11_current_window(const struct state* st)
+{
+    Window w;
+    int rt;
+    if(XGetInputFocus(st->dpy, &w, &rt) != 1) {
+        failwith("XGetInputFocus failed");
+    }
+    trace("focused window: %lu (%lx)", w, w);
+    return w;
 }
 
 static void set_layout(struct state* st, enum layout l)
@@ -224,12 +245,32 @@ static void set_layout(struct state* st, enum layout l)
 
 static void focus_changed(struct state* st, const struct window* w)
 {
+    info("focus changed %lu: %s", w->window, w->name);
+
     if(window_has_class(w, "musescore")
        || window_has_class(w ,"BaldursGate")) {
         set_layout(st, ENGLISH);
     } else {
         set_layout(st, DVORAK);
     }
+}
+
+static void check_focus(struct state* st)
+{
+    Window wx = x11_current_window(st);
+    if(wx == st->active) {
+        return;
+    }
+
+    debug("focus changed: %lu", wx);
+    st->active = wx;
+
+    struct window w;
+    if(x11_window(st, wx, &w) != 0) {
+        return;
+    }
+
+    focus_changed(st, &w);
 }
 
 static void x11_handle_event(struct state* st)
@@ -242,9 +283,7 @@ static void x11_handle_event(struct state* st)
         if(ev.type == FocusIn) {
             trace("focus in event: %lu", ev.xfocus.window);
         } else if(ev.type == FocusOut) {
-            struct window w;
-            x11_current_window(&w, st);
-            focus_changed(st, &w);
+            check_focus(st);
         } else {
             warning("ignored event: type=%d", ev.type);
         }
@@ -307,38 +346,123 @@ static void signalfd_handle_event(struct state* st)
     }
 }
 
+static void timespec_from_ms(struct timespec* ts, unsigned int ms)
+{
+    unsigned int s = ts->tv_sec = ms / 1000;
+    ms -= s * 1000;
+    ts->tv_nsec = ms * 1000000;
+}
+
+static void timerfd_init(struct state* st)
+{
+    st->tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    CHECK(st->tfd, "timerfd_create");
+}
+
+static void timerfd_start(struct state* st, unsigned int period_ms)
+{
+    struct timespec period;
+    timespec_from_ms(&period, period_ms);
+
+    struct itimerspec its = {
+        .it_interval = period,
+        .it_value = period,
+    };
+    int r = timerfd_settime(st->tfd, 0, &its, NULL);
+    CHECK(r, "timerfd_settime");
+}
+
+static int timerfd_fd(const struct state* st)
+{
+    return st->tfd;
+}
+
+static void timerfd_deinit(struct state* st)
+{
+    int r = close(st->tfd); CHECK(r, "close");
+    st->tfd = -1;
+}
+
+static void timerfd_ticks(struct state* st)
+{
+    size_t ticks = 0;
+    while(1) {
+        uint64_t t = 0;
+        ssize_t r = read(st->tfd, &t, sizeof(t));
+        if(r == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break;
+        }
+        CHECK(r, "read");
+        if(r != sizeof(t)) {
+            failwith("unexpected partial read");
+        }
+        ticks += t;
+    }
+    if(ticks == 0) {
+        failwith("spurious timerfd read");
+    } else if(ticks > 1) {
+        warning("missed timer ticks: %zu", ticks - 1);
+    }
+
+    trace("tick");
+    check_focus(st);
+}
+
 int main(int argc, char* argv[])
 {
     struct state st = {
         .running = 1,
+        .active = None,
 
         .layout = DVORAK,
     };
 
     signalfd_init(&st);
+    timerfd_init(&st);
     x11_init(&st);
+
+    st.active = x11_current_window(&st);
+
+    timerfd_start(&st, 100);
 
     struct pollfd fds[] = {
         { .fd = signalfd_fd(&st), .events = POLLIN },
+        { .fd = timerfd_fd(&st), .events = POLLIN },
         { .fd = x11_fd(&st), .events = POLLIN },
     };
 
     while(st.running) {
-        int r = poll(fds, LENGTH(fds), 0);
+        int r = poll(fds, LENGTH(fds), -1);
         CHECK(r, "poll");
 
         if(fds[0].revents & POLLIN) {
             signalfd_handle_event(&st);
+            fds[0].revents &= ~POLLIN;
         }
 
         if(fds[1].revents & POLLIN) {
+            timerfd_ticks(&st);
+            fds[1].revents &= ~POLLIN;
+        }
+
+        if(fds[2].revents & POLLIN) {
             x11_handle_event(&st);
+            fds[2].revents &= ~POLLIN;
+        }
+
+        for(size_t i = 0; i < LENGTH(fds); i++) {
+            if(fds[i].revents != 0) {
+                failwith("unhandled poll events: "
+                         "fds[%zu] = { .fd = %d, .revents = %hd }",
+                         i, fds[i].fd, fds[i].revents);
+            }
         }
     }
 
     debug("graceful shutdown");
     x11_deinit(&st);
     signalfd_deinit(&st);
+    timerfd_deinit(&st);
 
     return 0;
 }
