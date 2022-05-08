@@ -205,6 +205,11 @@ static int window_has_class(const struct window* w, const char* cls)
     return 0;
 }
 
+static int window_has_name(const struct window* w, const char* name)
+{
+    return strcmp(w->name, name) == 0;
+}
+
 static Window x11_current_window(const struct state* st)
 {
     Window w;
@@ -248,7 +253,12 @@ static void focus_changed(struct state* st, const struct window* w)
     info("focus changed %lu: %s", w->window, w->name);
 
     if(window_has_class(w, "musescore")
-       || window_has_class(w ,"BaldursGate")) {
+       || window_has_class(w, "BaldursGate")
+       || window_has_class(w, "Dwarf_Fortress")
+       || window_has_class(w, "nethack")
+       || window_has_name(w, "Caesar III")
+       || window_has_class(w, "devilutionx")
+       ) {
         set_layout(st, ENGLISH);
     } else {
         set_layout(st, DVORAK);
