@@ -4,11 +4,14 @@
 #include <string.h>
 #include <sys/signalfd.h>
 #include <sys/timerfd.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
-#include <r.h>
+#define LIBR_IMPLEMENTATION
+#include "r.h"
 
 static int handle_x11_error(Display* d, XErrorEvent* e)
 {

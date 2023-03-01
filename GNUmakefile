@@ -1,8 +1,10 @@
-export BUILD ?= $(shell pwd)/build
+CC = gcc
+CFLAGS ?= -O1 -Wall -Werror
+LOG_LEVEL ?= INFO
+CFLAGS += -DLOG_LEVEL=LOG_$(LOG_LEVEL)
+LDFLAGS = -lX11
 
-export PREFIX ?= $(HOME)/.local
-
-export INPUT_DEVICE_NAME ?= "SZMy-power LTD CO.  Dual Box WII"
+PREFIX ?= $(HOME)/.local
 
 define service
 	envsubst < $(strip $(1)).service | install -D /dev/stdin $(HOME)/.config/systemd/user/$(strip $(1)).service
@@ -10,23 +12,21 @@ define service
 	systemctl --user restart $(strip $(1)).service
 endef
 
+.PHONY: run
 run: build
-	$(BUILD)/controller -n $(INPUT_DEVICE_NAME) -I 0
+	./xhook
 
+.PHONY: install
 install: build
-	install --strip -D -t $(PREFIX)/bin \
-		$(BUILD)/controller $(BUILD)/outline-current-window $(BUILD)/xhook
-	$(call service, controller)
+	install --strip -D -t $(PREFIX)/bin xhook
 	$(call service, xhook)
 
-build: libr
-	$(MAKE) -C src
+.PHONY: build
+build: xhook
 
-libr:
-	@mkdir -p "$(BUILD)"
-	$(MAKE) -C libr install PREFIX="$(BUILD)/usr"
+%: %.c r.h
+	$(CC) -o $@ $(CFLAGS) $< $(LDFLAGS)
 
+.PHONY: clean
 clean:
-	rm -rf $(BUILD)
-
-.PHONY: run install build clean libr
+	rm -f xhook
