@@ -259,8 +259,13 @@ static void focus_changed(struct state* st, const struct window* w)
        || window_has_class(w, "BaldursGate")
        || window_has_class(w, "Dwarf_Fortress")
        || window_has_class(w, "nethack")
+       || window_has_class(w, "Stardew Valley")
        || window_has_name(w, "Caesar III")
        || window_has_class(w, "devilutionx")
+       || window_has_class(w, "adom64")
+       || window_has_class(w, "ecwolf")
+       || window_has_class(w, "FTL.amd64")
+       || window_has_class(w, "Breach")
        ) {
         set_layout(st, ENGLISH);
     } else {

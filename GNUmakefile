@@ -4,7 +4,7 @@ LOG_LEVEL ?= INFO
 CFLAGS += -DLOG_LEVEL=LOG_$(LOG_LEVEL)
 LDFLAGS = -lX11
 
-PREFIX ?= $(HOME)/.local
+export PREFIX ?= $(HOME)/.local
 
 define service
 	envsubst < $(strip $(1)).service | install -D /dev/stdin $(HOME)/.config/systemd/user/$(strip $(1)).service
