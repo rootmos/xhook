@@ -13,6 +13,13 @@
 #define LIBR_IMPLEMENTATION
 #include "r.h"
 
+typedef const char* layout_t;
+layout_t DVORAK = "dvorak";
+layout_t ENGLISH = "english";
+layout_t SWEDISH = "swedish";
+layout_t TEXT = "text";
+layout_t CHESS = "chess";
+
 static int handle_x11_error(Display* d, XErrorEvent* e)
 {
     char buf[1024];
@@ -21,17 +28,11 @@ static int handle_x11_error(Display* d, XErrorEvent* e)
     return 0;
 }
 
-enum layout {
-    DVORAK,
-    ENGLISH,
-    SWEDISH,
-};
-
 struct state {
     int running;
     Window active;
 
-    enum layout layout;
+    layout_t layout;
 
     int sfd, tfd;
 
@@ -82,6 +83,7 @@ struct window
     char name[MAX_STR];
     char class[MAX_CLASS][MAX_STR];
     size_t n_class;
+    Window parent, root;
 };
 
 static int x11_window_name(const struct state* st, Window w, char* buf)
@@ -178,6 +180,27 @@ static size_t x11_window_class(const struct state* st, Window w,
     return 0;
 }
 
+static int x11_window_parent(const struct state* st, Window w,
+                             Window* root, Window* parent)
+{
+    Window r, p;
+    Window *children = NULL;
+    unsigned int children_n;
+    Status res = XQueryTree(st->dpy, w,
+                            root != NULL ? root : &r,
+                            parent != NULL ? parent : &p,
+                            &children, &children_n);
+
+    if(!res) {
+        debug("XQueryTree(%lu) failed", w);
+        return -1;
+    }
+
+    XFree(children);
+
+    return 0;
+}
+
 static int x11_window(const struct state* st, Window wx, struct window* w)
 {
     w->window = wx;
@@ -194,6 +217,12 @@ static int x11_window(const struct state* st, Window wx, struct window* w)
         debug("window %lu class: %s", wx, w->class[i]);
     }
 
+    if(x11_window_parent(st, wx, &w->root, &w->parent) != 0) {
+        return -1;
+    }
+    debug("window %lu root: %lu", wx, w->root);
+    debug("window %lu parent: %lu", wx, w->parent);
+
     return 0;
 }
 
@@ -204,6 +233,31 @@ static int window_has_class(const struct window* w, const char* cls)
             return 1;
         }
     }
+
+    return 0;
+}
+
+static int window_has_class_rec(const struct state* st,
+                                const struct window* w, const char* cls)
+{
+    if(window_has_class(w, cls)) {
+        return 1;
+    }
+
+    Window xw = w->parent;
+    struct window p;
+    do {
+        if(x11_window(st, xw, &p) != 0) {
+            warning("x11_window(%lu) failed", xw);
+            return 0;
+        }
+
+        if(window_has_class(&p, cls)) {
+            return 1;
+        }
+
+        xw = p.parent;
+    } while(xw != p.root);
 
     return 0;
 }
@@ -224,19 +278,14 @@ static Window x11_current_window(const struct state* st)
     return w;
 }
 
-static void set_layout(struct state* st, enum layout l)
+static void set_layout(struct state* st, const layout_t l)
 {
     if(st->layout == l) {
         return;
     }
 
-    const char* cmd;
-    switch(l) {
-    case DVORAK: cmd = "~/bin/dv"; break;
-    case ENGLISH: cmd = "~/bin/us"; break;
-    case SWEDISH: cmd = "~/bin/sv"; break;
-    default: failwith("unsupported layout: %d", l);
-    }
+    char cmd[255];
+    snprintf(LIT(cmd), "~/bin/keymap %s", l);
 
     debug("running: %s", cmd);
     int ec = system(cmd);
@@ -255,7 +304,11 @@ static void focus_changed(struct state* st, const struct window* w)
 {
     info("focus changed %lu: %s", w->window, w->name);
 
-    if(window_has_class(w, "musescore")
+    if(window_has_class(w, "st-256color")
+       || window_has_class(w, "chromium")
+       ) {
+        set_layout(st, DVORAK);
+    } else if(window_has_class(w, "musescore")
        || window_has_class(w, "BaldursGate")
        || window_has_class(w, "Dwarf_Fortress")
        || window_has_class(w, "nethack")
@@ -268,6 +321,8 @@ static void focus_changed(struct state* st, const struct window* w)
        || window_has_class(w, "Breach")
        ) {
         set_layout(st, ENGLISH);
+    } else if(window_has_class_rec(st, w, "scid")) {
+        set_layout(st, CHESS);
     } else {
         set_layout(st, DVORAK);
     }
