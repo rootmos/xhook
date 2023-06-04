@@ -24,7 +24,7 @@ install: build
 .PHONY: build
 build: xhook
 
-%: %.c r.h
+%: %.c r.h config.h
 	$(CC) -o $@ $(CFLAGS) $< $(LDFLAGS)
 
 .PHONY: clean

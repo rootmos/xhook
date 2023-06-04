@@ -14,11 +14,6 @@
 #include "r.h"
 
 typedef const char* layout_t;
-layout_t DVORAK = "dvorak";
-layout_t ENGLISH = "english";
-layout_t SWEDISH = "swedish";
-layout_t TEXT = "text";
-layout_t CHESS = "chess";
 
 static int handle_x11_error(Display* d, XErrorEvent* e)
 {
@@ -300,31 +295,15 @@ static void set_layout(struct state* st, const layout_t l)
     st->layout = l;
 }
 
-static void focus_changed(struct state* st, const struct window* w)
-{
-    info("focus changed %lu: %s", w->window, w->name);
+#include "config.h"
 
-    if(window_has_class(w, "st-256color")
-       || window_has_class(w, "chromium")
-       ) {
-        set_layout(st, DVORAK);
-    } else if(window_has_class(w, "musescore")
-       || window_has_class(w, "BaldursGate")
-       || window_has_class(w, "Dwarf_Fortress")
-       || window_has_class(w, "nethack")
-       || window_has_class(w, "Stardew Valley")
-       || window_has_name(w, "Caesar III")
-       || window_has_class(w, "devilutionx")
-       || window_has_class(w, "adom64")
-       || window_has_class(w, "ecwolf")
-       || window_has_class(w, "FTL.amd64")
-       || window_has_class(w, "Breach")
-       ) {
-        set_layout(st, ENGLISH);
-    } else if(window_has_class_rec(st, w, "scid")) {
-        set_layout(st, CHESS);
-    } else {
-        set_layout(st, DVORAK);
+static void run_hooks(struct state* st, const struct window* w)
+{
+    debug("running hooks for window: %lu", w->window);
+
+    layout_t l = select_layout(st, w);
+    if(l) {
+        set_layout(st, l);
     }
 }
 
@@ -343,7 +322,8 @@ static void check_focus(struct state* st)
         return;
     }
 
-    focus_changed(st, &w);
+    info("focus changed %lu: %s", w.window, w.name);
+    run_hooks(st, &w);
 }
 
 static void x11_handle_event(struct state* st)
@@ -487,7 +467,7 @@ int main(int argc, char* argv[])
         .running = 1,
         .active = None,
 
-        .layout = DVORAK,
+        .layout = NULL,
     };
 
     signalfd_init(&st);
@@ -495,6 +475,11 @@ int main(int argc, char* argv[])
     x11_init(&st);
 
     st.active = x11_current_window(&st);
+
+    struct window w;
+    if(x11_window(&st, st.active, &w) == 0) {
+        run_hooks(&st, &w);
+    }
 
     timerfd_start(&st, 100);
 
