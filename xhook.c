@@ -1,10 +1,11 @@
 #include <errno.h>
+#include <libudev.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/signalfd.h>
 #include <sys/timerfd.h>
-#include <signal.h>
 #include <unistd.h>
 
 #include <X11/Xlib.h>
@@ -36,6 +37,9 @@ struct state {
     Window parent;
 
     Atom net_wm_name, utf8_string, wm_class;
+
+    struct udev* udev;
+    struct udev_monitor* udev_mon;
 };
 
 static void x11_init(struct state* st)
@@ -326,6 +330,94 @@ static void check_focus(struct state* st)
     run_hooks(st, &w);
 }
 
+static void udev_init(struct state* st)
+{
+    st->udev = udev_new();
+    if(st->udev == NULL) {
+        failwith("udev_new");
+    }
+
+    st->udev_mon = udev_monitor_new_from_netlink(st->udev, "udev");
+    if(st->udev_mon == NULL) {
+        failwith("udev_monitor_new_from_netlink");
+    }
+
+    int r = udev_monitor_filter_add_match_subsystem_devtype(
+        st->udev_mon, "input", NULL);
+    if(r < 0) {
+        failwith("udev_monitor_filter_add_match_subsystem_devtype");
+    }
+
+    r = udev_monitor_filter_update(st->udev_mon);
+    if(r < 0) {
+        failwith("udev_monitor_filter_update");
+    }
+}
+
+static void udev_deinit(struct state* st)
+{
+    udev_monitor_unref(st->udev_mon);
+    udev_unref(st->udev);
+}
+
+static void udev_start(struct state* st)
+{
+    int r = udev_monitor_enable_receiving(st->udev_mon);
+    if(r < 0) {
+        failwith("udev_monitor_enable_receiving");
+    }
+}
+
+static int udev_fd(const struct state* st)
+{
+    int fd = udev_monitor_get_fd(st->udev_mon);
+    if(fd < 0) {
+        failwith("udev_monitor_get_fd");
+    }
+    return fd;
+}
+
+static void udev_handle_event(struct state* st)
+{
+    struct udev_device* d = udev_monitor_receive_device(st->udev_mon);
+    if(d == NULL) {
+        failwith("udev_monitor_receive_device");
+    }
+
+    const char* action = udev_device_get_property_value(d, "ACTION");
+    if(action == NULL) {
+        debug("udev: event with action == NULL");
+        return;
+    } else if(strcmp(action, "add") != 0) {
+        debug("udev; ignoring non-add event: %s", action);
+        return;
+    }
+
+    const char* kbd = udev_device_get_property_value(d, "ID_INPUT_KEYBOARD");
+    if(kbd == NULL) {
+        debug("udev; ignoring non keyboard event (empty)");
+        return;
+    } else if(strcmp(kbd, "1") != 0) {
+        debug("udev; ignoring non keyboard event (ID_INPUT_KEYBOARD=%s)", kbd);
+        return;
+    }
+
+    const char* serial = udev_device_get_property_value(d, "ID_SERIAL");
+    info("keyboard added: %s", serial);
+
+    debug("resetting layout");
+    st->layout = NULL;
+
+    struct window w;
+    if(x11_window(st, st->active, &w) == 0) {
+        run_hooks(st, &w);
+    }
+
+    udev_device_unref(d);
+
+    // TODO: ought one process more than one event here?
+}
+
 static void x11_handle_event(struct state* st)
 {
     while(XPending(st->dpy)) {
@@ -473,6 +565,7 @@ int main(int argc, char* argv[])
     signalfd_init(&st);
     timerfd_init(&st);
     x11_init(&st);
+    udev_init(&st);
 
     st.active = x11_current_window(&st);
 
@@ -482,11 +575,13 @@ int main(int argc, char* argv[])
     }
 
     timerfd_start(&st, 100);
+    udev_start(&st);
 
     struct pollfd fds[] = {
         { .fd = signalfd_fd(&st), .events = POLLIN },
         { .fd = timerfd_fd(&st), .events = POLLIN },
         { .fd = x11_fd(&st), .events = POLLIN },
+        { .fd = udev_fd(&st), .events = POLLIN },
     };
 
     while(st.running) {
@@ -508,6 +603,11 @@ int main(int argc, char* argv[])
             fds[2].revents &= ~POLLIN;
         }
 
+        if(fds[3].revents & POLLIN) {
+            udev_handle_event(&st);
+            fds[3].revents &= ~POLLIN;
+        }
+
         for(size_t i = 0; i < LENGTH(fds); i++) {
             if(fds[i].revents != 0) {
                 failwith("unhandled poll events: "
@@ -518,6 +618,7 @@ int main(int argc, char* argv[])
     }
 
     debug("graceful shutdown");
+    udev_deinit(&st);
     x11_deinit(&st);
     signalfd_deinit(&st);
     timerfd_deinit(&st);

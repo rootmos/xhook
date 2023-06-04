@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS ?= -O1 -Wall -Werror
 LOG_LEVEL ?= INFO
 CFLAGS += -DLOG_LEVEL=LOG_$(LOG_LEVEL)
-LDFLAGS = -lX11
+LDFLAGS = -lX11 -ludev
 
 export PREFIX ?= $(HOME)/.local
 
@@ -24,8 +24,11 @@ install: build
 .PHONY: build
 build: xhook
 
-%: %.c r.h config.h
-	$(CC) -o $@ $(CFLAGS) $< $(LDFLAGS)
+xhook: xhook.c r.h config.h
+	$(CC) -o $@ $(CFLAGS) $< -lX11 -ludev
+
+monitor: monitor.c r.h
+	$(CC) -o $@ $(CFLAGS) $< -ludev
 
 .PHONY: clean
 clean:
