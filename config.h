@@ -10,7 +10,9 @@ static layout_t select_layout(const struct state* st, const struct window* w)
        || window_has_class(w, "chromium")
        ) {
         return DEFAULT;
-    } else if(window_has_class(w, "musescore")
+    }
+
+    if(window_has_class(w, "musescore")
        || window_has_class(w, "BaldursGate")
        || window_has_class(w, "Dwarf_Fortress")
        || window_has_class(w, "nethack")
@@ -21,12 +23,17 @@ static layout_t select_layout(const struct state* st, const struct window* w)
        || window_has_class(w, "ecwolf")
        || window_has_class(w, "FTL.amd64")
        || window_has_class(w, "Breach")
-       /*|| window_has_class(w, "Chowdren")*/
+       || window_has_class(w, "Chowdren")
        ) {
         return ENGLISH;
-    } else if(window_has_class_rec(st, w, "scid")) {
-        return CHESS;
-    } else {
-        return DEFAULT;
     }
+
+    if(window_has_class_rec(st, w, "scid")) {
+        return CHESS;
+    }
+    if(window_has_class_rec(st, w, "setup")) {
+        return ENGLISH;
+    }
+
+    return DEFAULT;
 }
