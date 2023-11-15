@@ -24,6 +24,7 @@ static layout_t select_layout(const struct state* st, const struct window* w)
        || window_has_class(w, "FTL.amd64")
        || window_has_class(w, "Breach")
        || window_has_class(w, "Chowdren")
+       || window_has_class(w, "cogmind.exe")
        ) {
         return ENGLISH;
     }
@@ -33,6 +34,10 @@ static layout_t select_layout(const struct state* st, const struct window* w)
     }
     if(window_has_class_rec(st, w, "setup")) {
         return ENGLISH;
+    }
+
+    if(window_has_class(w, "adom")) {
+        return "adom";
     }
 
     return DEFAULT;
