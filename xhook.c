@@ -36,7 +36,7 @@ struct state {
     int scr;
     Window parent;
 
-    Atom net_wm_name, utf8_string, wm_class;
+    Atom net_wm_name, utf8_string, compound_text, wm_class;
 
     struct udev* udev;
     struct udev_monitor* udev_mon;
@@ -57,6 +57,7 @@ static void x11_init(struct state* st)
 
     st->net_wm_name = XInternAtom(st->dpy, "_NET_WM_NAME", False);
     st->utf8_string = XInternAtom(st->dpy, "UTF8_STRING", False);
+    st->compound_text = XInternAtom(st->dpy, "COMPOUND_TEXT", False);
     st->wm_class = XInternAtom(st->dpy, "WM_CLASS", False);
 
     XSync(st->dpy, False);
@@ -106,6 +107,12 @@ static int x11_window_name(const struct state* st, Window w, char* buf)
 
     if(t == None) {
         debug("window %lu has no name", w);
+        buf[0] = 0;
+        return 0;
+    }
+
+    if(t == st->compound_text) {
+        warning("window %lu has COMPOUND_TEXT name: ignoring", w);
         buf[0] = 0;
         return 0;
     }
