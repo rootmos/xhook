@@ -6,9 +6,7 @@ layout_t CHESS = "chess";
 
 static layout_t select_layout(const struct state* st, const struct window* w)
 {
-    if(window_has_class(w, "st-256color")
-       || window_has_class(w, "chromium")
-       ) {
+    if(window_has_class(w, "chromium")) {
         return DEFAULT;
     }
 
@@ -25,6 +23,10 @@ static layout_t select_layout(const struct state* st, const struct window* w)
        || window_has_class(w, "Breach")
        || window_has_class(w, "Chowdren")
        || window_has_class(w, "cogmind.exe")
+       || window_has_class(w, "oolite")
+       || window_has_class(w, "crawl")
+       || window_has_class(w, "CoQ.x86_64")
+       || window_has_class(w, "dwarfort")
        ) {
         return ENGLISH;
     }
