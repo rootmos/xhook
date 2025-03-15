@@ -27,6 +27,7 @@ static layout_t select_layout(const struct state* st, const struct window* w)
        || window_has_class(w, "crawl")
        || window_has_class(w, "CoQ.x86_64")
        || window_has_class(w, "dwarfort")
+       || window_has_name(w, "Risk of Rain")
        ) {
         return ENGLISH;
     }

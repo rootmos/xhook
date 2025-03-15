@@ -36,7 +36,7 @@ struct state {
     int scr;
     Window parent;
 
-    Atom net_wm_name, utf8_string, compound_text, wm_class;
+    Atom net_wm_name, wm_name, utf8_string, string, compound_text, wm_class;
 
     struct udev* udev;
     struct udev_monitor* udev_mon;
@@ -56,7 +56,9 @@ static void x11_init(struct state* st)
     XSelectInput(st->dpy, st->parent, FocusChangeMask);
 
     st->net_wm_name = XInternAtom(st->dpy, "_NET_WM_NAME", False);
+    st->wm_name = XInternAtom(st->dpy, "WM_NAME", False);
     st->utf8_string = XInternAtom(st->dpy, "UTF8_STRING", False);
+    st->string = XInternAtom(st->dpy, "STRING", False);
     st->compound_text = XInternAtom(st->dpy, "COMPOUND_TEXT", False);
     st->wm_class = XInternAtom(st->dpy, "WM_CLASS", False);
 
@@ -92,20 +94,31 @@ static int x11_window_name(const struct state* st, Window w, char* buf)
     int fmt;
     unsigned long nitems, remaining;
     unsigned char* b = NULL;
-    int res = XGetWindowProperty(st->dpy, w, st->net_wm_name,
+
+    Atom p = st->net_wm_name, T = st->utf8_string;
+
+attempt:
+    debug("XGetWindowProperty(%lu, %s)", w, XGetAtomName(st->dpy, p));
+    int res = XGetWindowProperty(st->dpy, w, p,
                                  0L, MAX_STR-1,
                                  False /* delete */,
-                                 st->utf8_string /* req_type */,
+                                 T /* req_type */,
                                  &t /* actual_type */,
                                  &fmt, &nitems, &remaining, &b);
 
     if(res != Success) {
         debug("XGetWindowProperty(%lu, %s) failed",
-              w, XGetAtomName(st->dpy, st->wm_class));
+              w, XGetAtomName(st->dpy, p));
         return -1;
     }
 
     if(t == None) {
+        if(p == st->net_wm_name) {
+            p = st->wm_name;
+            T = st->string;
+            goto attempt;
+        }
+
         debug("window %lu has no name", w);
         buf[0] = 0;
         return 0;
@@ -117,15 +130,15 @@ static int x11_window_name(const struct state* st, Window w, char* buf)
         return 0;
     }
 
-    if(t != st->utf8_string) {
+    if(t != st->utf8_string && t != st->string) {
         failwith("XGetWindowProperty(%lu, %s) returned an unexpected type: %s",
-                 w, XGetAtomName(st->dpy, st->net_wm_name),
+                 w, XGetAtomName(st->dpy, p),
                  XGetAtomName(st->dpy, t));
     }
 
     if(fmt != 8) {
         failwith("XGetWindowProperty(%lu, %s) returned an unexpected format",
-                 w, XGetAtomName(st->dpy, st->net_wm_name));
+                 w, XGetAtomName(st->dpy, p));
     }
 
     memcpy(buf, b, nitems+1);
@@ -214,7 +227,9 @@ static int x11_window(const struct state* st, Window wx, struct window* w)
     if(x11_window_name(st, wx, w->name) != 0) {
         return -1;
     }
-    debug("window %lu name: %s", wx, w->name);
+    if(w->name[0]) {
+        debug("window %lu name: %s", wx, w->name);
+    }
 
     if(x11_window_class(st, wx, w->class, &w->n_class) != 0) {
         return -1;
