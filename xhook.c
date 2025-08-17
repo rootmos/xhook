@@ -10,6 +10,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+#include <X11/extensions/Xfixes.h>
 
 #define LIBR_IMPLEMENTATION
 #include "r.h"
@@ -27,6 +28,8 @@ static int handle_x11_error(Display* d, XErrorEvent* e)
 struct state {
     int running;
     Window active;
+
+    Window cursor_hidden_for_window;
 
     layout_t layout;
 
@@ -343,6 +346,12 @@ static void check_focus(struct state* st)
     debug("focus changed: %lu", wx);
     st->active = wx;
 
+    if(st->cursor_hidden_for_window != wx) {
+        info("showing cursor for window: %lu", st->cursor_hidden_for_window);
+        XFixesShowCursor(st->dpy, st->cursor_hidden_for_window);
+        st->cursor_hidden_for_window = None;
+    }
+
     struct window w;
     if(x11_window(st, wx, &w) != 0) {
         return;
@@ -350,6 +359,12 @@ static void check_focus(struct state* st)
 
     info("focus changed %lu: %s", w.window, w.name);
     run_hooks(st, &w);
+
+    if(hide_cursor(st, &w)) {
+        info("hiding cursor for window %lu: %s", w.window, w.name);
+        XFixesHideCursor(st->dpy, w.window);
+        st->cursor_hidden_for_window = w.window;
+    }
 }
 
 static void udev_init(struct state* st)
@@ -580,6 +595,7 @@ int main(int argc, char* argv[])
     struct state st = {
         .running = 1,
         .active = None,
+        .cursor_hidden_for_window = None,
 
         .layout = NULL,
     };

@@ -17,7 +17,6 @@ static layout_t select_layout(const struct state* st, const struct window* w)
        || window_has_class(w, "Stardew Valley")
        || window_has_name(w, "Caesar III")
        || window_has_class(w, "devilutionx")
-       || window_has_class(w, "adom64")
        || window_has_class(w, "ecwolf")
        || window_has_class(w, "FTL.amd64")
        || window_has_class(w, "Breach")
@@ -28,6 +27,8 @@ static layout_t select_layout(const struct state* st, const struct window* w)
        || window_has_class(w, "CoQ.x86_64")
        || window_has_class(w, "dwarfort")
        || window_has_name(w, "Risk of Rain")
+       || window_has_class(w, "beeps-escape")
+       || window_has_name(w, "UNDERTALE")
        ) {
         return ENGLISH;
     }
@@ -44,4 +45,13 @@ static layout_t select_layout(const struct state* st, const struct window* w)
     }
 
     return DEFAULT;
+}
+
+static int hide_cursor(const struct state* st, const struct window* w)
+{
+    if(window_has_class(w, "feh")) {
+        return 1;
+    }
+
+    return 0;
 }
