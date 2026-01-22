@@ -309,7 +309,7 @@ static void set_layout(struct state* st, const layout_t l)
     }
 
     char cmd[255];
-    snprintf(LIT(cmd), "~/bin/keymap %s", l);
+    snprintf(LIT(cmd), "keymap %s", l);
 
     debug("running: %s", cmd);
     int ec = system(cmd);
